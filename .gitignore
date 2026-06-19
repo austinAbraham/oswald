@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyc
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# uv / virtualenv
+.venv/
+venv/
+
+# dbt
+.dbt/
+target/
+dbt_packages/
+logs/
+
+# Secrets / local config (never commit filled-in config or env)
+.env
+.env.*
+config.yaml
+
+# OS / editor
+.DS_Store

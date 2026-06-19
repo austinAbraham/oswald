@@ -1,0 +1,48 @@
+[project]
+name = "oswald"
+version = "0.1.0"
+description = "Open dbt Modeling Agent Harness — bring-your-own-everything, self-hostable pipeline that drives a well-specified ticket to a sandbox-validated dbt PR."
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    "claude-agent-sdk>=0.2.105",
+    "dbt-core>=1.11",
+    "dbt-mcp==1.20.4",
+    "dbt-snowflake>=1.11",
+    "litellm>=1.89.2",
+    "mcp>=1.26.0",
+    "pydantic>=2.13",
+    "pydantic-settings>=2.10.1",
+    "pyyaml>=6",
+    "sqlfluff>=4.2",
+    "typer>=0.26",
+]
+
+[project.scripts]
+oswald = "oswald.cli:app"
+
+[build-system]
+requires = ["uv_build>=0.11.21,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "duckdb>=1.5.4",
+    "pytest>=9",
+    "pytest-asyncio>=1.4",
+    "pytest-socket>=0.8",
+]
+
+# Global socket-deny default: data residency is a CI-asserted invariant from the
+# first slice (SEC-04 / D-11). Every socket is denied unless a test explicitly opts
+# in with @pytest.mark.allow_hosts([...]) — added in plan 02 + the Walking-Skeleton plan.
+#
+# --allow-unix-socket carves out AF_UNIX (local) sockets ONLY. Network sockets
+# (AF_INET/AF_INET6) remain fully denied — the SEC-04 egress invariant is intact
+# (verified: AF_INET construction still raises SocketBlockedError under this config).
+# AF_UNIX is needed because the asyncio event loop's self-pipe and local MCP stdio
+# transports use Unix-domain socketpairs; without this the asyncio_mode="auto" tests
+# error at loop setup (the self-pipe socket is blocked, leaving the loop half-built).
+[tool.pytest.ini_options]
+addopts = "--disable-socket --allow-unix-socket"
+asyncio_mode = "auto"
+testpaths = ["tests"]

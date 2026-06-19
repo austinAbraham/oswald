@@ -1,0 +1,53 @@
+{
+  "mcpServers": {
+    "dbt-eda": {
+      "command": "uvx",
+      "args": ["dbt-mcp"],
+      "env": {
+        "DBT_MCP_ENABLE_TOOLS": "show,compile,list,parse,docs",
+        "DISABLE_SEMANTIC_LAYER": "true",
+        "DISABLE_DISCOVERY": "true",
+        "DISABLE_ADMIN_API": "true",
+        "DISABLE_SQL": "true",
+        "DBT_PROFILES_DIR": "./dbt_project",
+        "DO_NOT_TRACK": "1",
+        "DBT_SEND_ANONYMOUS_USAGE_STATS": "false"
+      }
+    },
+    "dbt-build": {
+      "command": "uvx",
+      "args": ["dbt-mcp"],
+      "env": {
+        "DBT_MCP_ENABLE_TOOLS": "build,run,test,compile,list",
+        "DISABLE_SEMANTIC_LAYER": "true",
+        "DISABLE_DISCOVERY": "true",
+        "DISABLE_ADMIN_API": "true",
+        "DISABLE_SQL": "true",
+        "DBT_PROFILES_DIR": "./dbt_project",
+        "DO_NOT_TRACK": "1",
+        "DBT_SEND_ANONYMOUS_USAGE_STATS": "false"
+      }
+    },
+    "warehouse-ro": {
+      "command": "your-warehouse-mcp",
+      "args": [],
+      "env": {
+        "SF_ACCOUNT": "${SF_ACCOUNT}",
+        "SF_USER": "${SF_RO_USER}",
+        "SF_WAREHOUSE": "${SF_WH}"
+      }
+    },
+    "ticketing": {
+      "command": "your-ticketing-mcp",
+      "args": [],
+      "env": {}
+    },
+    "git": {
+      "command": "your-git-mcp",
+      "args": [],
+      "env": {
+        "GITHUB_TOKEN": "${BOT_TOKEN}"
+      }
+    }
+  }
+}

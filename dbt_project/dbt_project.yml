@@ -1,0 +1,34 @@
+# Oswald — reference dbt project skeleton.
+#
+# Minimal project so the local dbt-mcp CLI tools (compile/list/build against the
+# sandbox target) resolve. Models the user supplies live under models/; this
+# skeleton ships the staging -> intermediate -> marts layering (pack/CLAUDE.md,
+# D-04/D-06) and the generate_schema_name override (SEC-02 sandbox backstop).
+name: "oswald"
+version: "1.0.0"
+config-version: 2
+
+# The named profile in profiles.example.yml (default target = eda_ro read-only).
+profile: "oswald"
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+seed-paths: ["seeds"]
+test-paths: ["tests"]
+snapshot-paths: ["snapshots"]
+analysis-paths: ["analyses"]
+
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+# Default house-style layering (D-04/D-06). Overridable per the pack conventions.
+models:
+  oswald:
+    staging:
+      +materialized: view
+    intermediate:
+      +materialized: ephemeral
+    marts:
+      +materialized: table

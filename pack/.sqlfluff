@@ -1,0 +1,63 @@
+# Oswald shipped sqlfluff config — Snowflake dialect (D-05 / D-06).
+#
+# Convention adherence is prose + DETERMINISTIC linting: pack/CLAUDE.md carries
+# the judgment-level house style; this file makes naming / casing / layout
+# violations catchable by `sqlfluff lint` during build + validate, not left to
+# model discretion (the "don't LLM-ify deterministic steps" principle).
+#
+# Override me: copy into your dbt project root (or point sqlfluff at it) and
+# adjust to taste. Defaults below match the pack/CLAUDE.md prose so a model that
+# follows the conventions lints clean.
+
+[sqlfluff]
+dialect = snowflake
+# `jinja` lints standalone (no dbt project needed) and still understands
+# {{ ref(...) }} / {{ source(...) }}. Switch to `dbt` inside a configured dbt
+# project for full ref/source resolution.
+templater = jinja
+max_line_length = 120
+# Keep the rule surface focused on the house-style invariants that matter; leave
+# the rest at sqlfluff defaults.
+exclude_rules = RF01, RF02, RF03, RF04
+
+[sqlfluff:indentation]
+indented_joins = false
+indented_using_on = true
+template_blocks_indent = false
+
+# --- Casing: lowercase keywords + functions, snake_case identifiers ----------
+[sqlfluff:rules:capitalisation.keywords]
+capitalisation_policy = lower
+
+[sqlfluff:rules:capitalisation.identifiers]
+extended_capitalisation_policy = lower
+
+[sqlfluff:rules:capitalisation.functions]
+extended_capitalisation_policy = lower
+
+[sqlfluff:rules:capitalisation.literals]
+capitalisation_policy = lower
+
+[sqlfluff:rules:capitalisation.types]
+extended_capitalisation_policy = lower
+
+# --- Aliasing: explicit AS, every column/expression aliased -----------------
+[sqlfluff:rules:aliasing.table]
+aliasing = explicit
+
+[sqlfluff:rules:aliasing.column]
+aliasing = explicit
+
+[sqlfluff:rules:aliasing.expression]
+allow_scalar = false
+
+# --- Ambiguity: forbid `select *` in models; require explicit columns -------
+[sqlfluff:rules:ambiguous.column_references]
+group_by_and_order_by_style = consistent
+
+# --- Layout: trailing commas, single leading space ---------------------------
+[sqlfluff:layout:type:comma]
+line_position = trailing
+
+[sqlfluff:rules:convention.terminator]
+require_final_semicolon = false

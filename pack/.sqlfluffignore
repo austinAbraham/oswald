@@ -1,0 +1,17 @@
+# Oswald shipped .sqlfluffignore — exclude generated / non-source paths from
+# linting (mirror this into your dbt project root alongside .sqlfluff).
+
+# dbt build artifacts
+target/
+dbt_packages/
+dbt_modules/
+logs/
+
+# dependency / packaging artifacts
+.venv/
+venv/
+__pycache__/
+
+# compiled SQL (lint the source models, not the compiled output)
+**/compiled/
+**/run/

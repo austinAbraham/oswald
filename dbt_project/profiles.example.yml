@@ -1,0 +1,37 @@
+# Oswald — dbt profiles.example.yml  (SEC-02: Rule-of-Two target split)
+#
+# TWO targets in ONE profile realise the read-only-vs-build split at the dbt
+# target + warehouse-role level — NOT a prompt (RESEARCH Anti-Patterns):
+#
+#   eda_ro   — the DEFAULT target. Read-only EDA path. Uses the OSWALD_READ_ONLY
+#              Snowflake role (SELECT only, no write anywhere). The dbt-eda
+#              dbt-mcp instance (.mcp.json) runs against this target.
+#   sandbox  — the build path. Uses the OSWALD_SANDBOX role, which can write ONLY
+#              the ANALYTICS.OSWALD_SANDBOX schema. The dbt-build instance runs
+#              against this target; the generate_schema_name override
+#              (macros/generate_schema_name.sql) forces every build into the
+#              OSWALD_SANDBOX schema as a backstop.
+#
+# Copy to ~/.dbt/profiles.yml (or set DBT_PROFILES_DIR to this dir) and export the
+# referenced env vars. Exact grants: docs/minimal-permissions.md (SEC-05).
+oswald:
+  target: eda_ro            # DEFAULT — the read-only EDA path (no write power)
+  outputs:
+    eda_ro:                 # read-only role; SELECT only, no write anywhere
+      type: snowflake
+      account: "{{ env_var('SF_ACCOUNT') }}"
+      user: "{{ env_var('SF_RO_USER') }}"
+      role: OSWALD_READ_ONLY
+      warehouse: "{{ env_var('SF_WH') }}"
+      database: ANALYTICS
+      schema: PUBLIC        # irrelevant — the read-only role never writes
+      threads: 4
+    sandbox:                # write role; can ONLY create/write the sandbox schema
+      type: snowflake
+      account: "{{ env_var('SF_ACCOUNT') }}"
+      user: "{{ env_var('SF_SANDBOX_USER') }}"
+      role: OSWALD_SANDBOX
+      warehouse: "{{ env_var('SF_WH') }}"
+      database: ANALYTICS
+      schema: OSWALD_SANDBOX   # the dedicated sandbox schema (forced by the macro)
+      threads: 4

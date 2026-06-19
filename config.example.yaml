@@ -1,0 +1,116 @@
+# Oswald — config.example.yaml
+#
+# Copy-and-fill template (PACK-01). `oswald init` scaffolds from this file:
+#     cp config.example.yaml config.yaml
+# then fill in the non-secret values and export the referenced environment
+# variables. SECRETS ARE ENV-ONLY: every credential below is a `${ENV}`
+# reference, never an inline literal. The schema REJECTS an inline secret with a
+# named validation error (threat T-03-01 — secrets never stored inline).
+#
+# Required env vars (see docs/minimal-permissions.md for the grants/scopes):
+#   SF_ACCOUNT        Snowflake account identifier
+#   SF_RO_USER        read-only EDA warehouse user (OSWALD_READ_ONLY role)
+#   SF_SANDBOX_USER   sandbox-write warehouse user (OSWALD_SANDBOX role)
+#   SF_WH             Snowflake warehouse
+#   MODEL_API_KEY     BYO-LLM model endpoint API key (LiteLLM-routed)
+#   BOT_TOKEN         git bot token (PR-only identity; cannot merge — SEC-03)
+
+# ---------------------------------------------------------------------------
+# BYO-LLM model (LiteLLM-routed). endpoint/name are non-secret; api_key is
+# env-only. Telemetry is OFF by default so no prompt / EDA sample / ticket text
+# leaves the boundary (RESEARCH Pitfall 1 / threat T-03-02).
+# ---------------------------------------------------------------------------
+model:
+  endpoint: https://your-litellm-or-model-endpoint.internal
+  name: anthropic/claude-sonnet-4-5
+  api_key: ${MODEL_API_KEY}
+  callbacks: []                 # keep empty — no off-boundary logging callbacks
+  turn_off_message_logging: true
+
+# ---------------------------------------------------------------------------
+# MCP servers (MCP-01). Same shape as .mcp.json (RESEARCH Pattern 3). Two
+# dbt-mcp registrations give the Rule-of-Two roles different tool-sets from one
+# binary: dbt-eda is read-only (show/compile/list); dbt-build writes the sandbox
+# target only (no clone). DO_NOT_TRACK=1 suppresses dbt-mcp telemetry.
+# ---------------------------------------------------------------------------
+mcp_servers:
+  dbt-eda:
+    command: uvx
+    args: ["dbt-mcp"]
+    env:
+      DBT_MCP_ENABLE_TOOLS: "show,compile,list,parse,docs"
+      DISABLE_SEMANTIC_LAYER: "true"
+      DISABLE_DISCOVERY: "true"
+      DISABLE_ADMIN_API: "true"
+      DBT_PROFILES_DIR: "./dbt_project"
+      DO_NOT_TRACK: "1"
+      DBT_SEND_ANONYMOUS_USAGE_STATS: "false"
+  dbt-build:
+    command: uvx
+    args: ["dbt-mcp"]
+    env:
+      DBT_MCP_ENABLE_TOOLS: "build,run,test,compile,list"   # note: omit clone
+      DISABLE_SEMANTIC_LAYER: "true"
+      DISABLE_DISCOVERY: "true"
+      DISABLE_ADMIN_API: "true"
+      DBT_PROFILES_DIR: "./dbt_project"
+      DO_NOT_TRACK: "1"
+      DBT_SEND_ANONYMOUS_USAGE_STATS: "false"
+  warehouse-ro:
+    command: your-warehouse-mcp
+    args: []
+    env:
+      SF_ACCOUNT: ${SF_ACCOUNT}
+      SF_USER: ${SF_RO_USER}      # read-only role only
+      SF_WAREHOUSE: ${SF_WH}
+  ticketing:
+    command: your-ticketing-mcp
+    args: []
+    env: {}
+  git:
+    command: your-git-mcp
+    args: []
+    env:
+      GITHUB_TOKEN: ${BOT_TOKEN}
+
+# ---------------------------------------------------------------------------
+# Requirement source — where ready tickets come from (the ticketing MCP).
+# ---------------------------------------------------------------------------
+requirement_source:
+  kind: jira
+  mcp_server: ticketing
+
+# ---------------------------------------------------------------------------
+# Repo — git remote + PR-only bot identity + protected branch (SEC-03). The
+# bot cannot merge; the no-merge guarantee comes from branch protection (see
+# docs/minimal-permissions.md), not a token scope.
+# ---------------------------------------------------------------------------
+repo:
+  remote: https://github.com/your-org/your-dbt-repo.git
+  bot_user: oswald-bot
+  bot_token: ${BOT_TOKEN}
+  protected_branch: main
+
+# ---------------------------------------------------------------------------
+# Conventions — pointers to the shipped pack (D-04/D-05). Override-me defaults.
+# ---------------------------------------------------------------------------
+conventions:
+  claude_md: pack/CLAUDE.md
+  sqlfluff: pack/.sqlfluff
+
+# ---------------------------------------------------------------------------
+# Gates — per-stage human approval. ALL ON in M1 (human-driven-as-you-go, D-12).
+# ---------------------------------------------------------------------------
+gates:
+  intake: true
+  plan: true
+  model: true
+  build: true
+  pr: true
+
+# ---------------------------------------------------------------------------
+# Sandbox — the dedicated schema dbt build/clone is restricted to (SEC-02).
+# ---------------------------------------------------------------------------
+sandbox:
+  schema_name: OSWALD_SANDBOX
+  target: sandbox
