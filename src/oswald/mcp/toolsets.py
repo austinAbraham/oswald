@@ -68,10 +68,130 @@ BUILD_TOOLS: frozenset[str] = frozenset(
     }
 )
 
-# Verbs/tool fragments that must never appear in READ_ONLY_TOOLS (Rule-of-Two
-# elevation guard) and the clone guard for BUILD_TOOLS.
-_WRITE_FRAGMENTS = ("build", "run", "test", "clone", "seed", "snapshot", "merge")
-_PR_WRITE_FRAGMENTS = ("open_pull_request", "create_branch", "push", "merge")
+# --------------------------------------------------------------------------- #
+# Write/destructive-verb vocabulary — the SINGLE SOURCE OF TRUTH for "is this
+# borrowed/local tool a write/destructive tool?" (CR-01 / CR-02 / WR-03).
+#
+# This is a DENYLIST OVER DESTRUCTIVE VERB STEMS, not a closed list of literal
+# tool names. Real GitHub/Atlassian MCP connectors expose many destructive tools
+# whose names share none of the original 7 dbt fragments (`create_pull_request`,
+# `create_branch`, `push`, `deleteJiraIssue`, `updateJiraIssue`,
+# `create_or_update_file`, `delete_file`, `fork_repository`, …). A stem denylist
+# cannot be outrun by a connector inventing a new destructive verb the way a
+# 5-name allowlist could (the Rule-of-Two bypass the review found).
+#
+# Matching is CASE-INSENSITIVE SUBSTRING so vendor camelCase variants
+# (`mergePullRequest`, `EditJiraIssue`, `addCommentToJira`) are caught the same as
+# snake_case. The stems are deliberately short verb roots; every read verb the
+# project uses (show/compile/list/parse/docs/query/describe/get_issue/
+# search_issues/getJiraIssue/searchJiraIssues/get_pull_request) contains NONE of
+# them — verified by the import-time asserts below and the resolver asserts in
+# profiles.py (one source of truth, reused there).
+# --------------------------------------------------------------------------- #
+_WRITE_FRAGMENTS: tuple[str, ...] = (
+    # dbt build/clone family (the original M1 vocabulary — kept verbatim).
+    "build",
+    "run",
+    "test",
+    "clone",
+    "seed",
+    "snapshot",
+    "merge",
+    # generic destructive verb stems (borrowed GitHub/Atlassian connectors, etc.).
+    "create",
+    "update",
+    "delete",
+    "remove",
+    "edit",
+    "write",
+    "add",
+    "set",
+    "post",
+    "put",
+    "patch",
+    "comment",
+    "transition",
+    "move",
+    "archive",
+    "close",
+    "fork",
+    "rename",
+    "replace",
+    "upload",
+    "modify",
+    "destroy",
+    "approve",
+    "push",
+)
+
+# PR/git-write fragments that must never appear in READ_ONLY_TOOLS. Kept distinct
+# so the PR-specific Rule-of-Two assert names the PR surface explicitly. Includes
+# `open_pull_request`, which carries no standalone write stem. NOTE: the bare
+# `pull_request` substring is deliberately NOT here — it would mis-flag the
+# read-only `get_pull_request`/`list_pull_requests`; the writing PR verbs are
+# caught by their own stems (`open_pull_request`/`create`/`merge`).
+_PR_WRITE_FRAGMENTS: tuple[str, ...] = (
+    "open_pull_request",
+    "create_branch",
+    "push",
+    "merge",
+)
+
+# Read-verb stems — a tool that matches none of the write/PR fragments AND looks
+# like one of these is a confident read-only classification. Used by the
+# allowlist-style EDA-context discipline so a connector inventing a brand-new
+# *non-read* verb is not silently treated as read-only either.
+_READ_FRAGMENTS: tuple[str, ...] = (
+    "get",
+    "list",
+    "search",
+    "show",
+    "describe",
+    "read",
+    "compile",
+    "parse",
+    "docs",
+    "fetch",
+    "query",
+    "view",
+    "find",
+    "lookup",
+    "inspect",
+)
+
+
+def is_write_tool(tool: str) -> bool:
+    """True iff ``tool`` is a write/destructive tool name (the single classifier).
+
+    Case-insensitive substring match against the destructive verb-stem denylist
+    (:data:`_WRITE_FRAGMENTS`) plus the PR/git-write fragments
+    (:data:`_PR_WRITE_FRAGMENTS`). This is the ONE source of truth consumed by the
+    binding probe's EDA-context FAIL and destructive-borrowed WARN (CR-01/WR-03)
+    so a borrowed connector cannot present an undetected write tool.
+
+    A tool name like ``mcp__github__create_pull_request``,
+    ``deleteJiraIssue``, ``mergePullRequest`` (camelCase), or
+    ``mcp__atlassian__addCommentToJiraIssue`` returns ``True``; a read tool like
+    ``getJiraIssue`` / ``mcp__dbt-eda__show`` returns ``False``.
+    """
+    t = tool.lower()
+    if any(frag in t for frag in _WRITE_FRAGMENTS):
+        return True
+    return any(frag in t for frag in _PR_WRITE_FRAGMENTS)
+
+
+def is_read_only_tool(tool: str) -> bool:
+    """True iff ``tool`` is a confident read-only tool (allowlist discipline).
+
+    Read-only ONLY if it carries NO write/destructive fragment AND it looks like a
+    read verb (:data:`_READ_FRAGMENTS`). A connector inventing a novel verb that is
+    neither a known read nor a known write stem is therefore NOT auto-trusted as
+    read-only — the conservative, fail-safe default the Rule-of-Two demands.
+    """
+    if is_write_tool(tool):
+        return False
+    t = tool.lower()
+    return any(frag in t for frag in _READ_FRAGMENTS)
 
 # --------------------------------------------------------------------------- #
 # Invariants — fail at import time if the split is ever broken (correctness gate).

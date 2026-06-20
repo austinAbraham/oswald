@@ -1,5 +1,5 @@
 ---
-name: oswald-model
+name: model
 description: Build/model subagent for an Oswald run. Writes dbt models on a feature branch from the human-approved plan, builds into the sandbox, and prepares the PR. Holds Rule-of-Two powers B+C only — acts on the approved plan, never the raw ticket; never merges.
 context: fork
 allowed-tools:
@@ -42,3 +42,6 @@ action behind branch protection.
 
 Return a summary of the models written, their grain key(s), and confirmation that
 each grain key carries both the `unique` and `not_null` tests.
+
+> Invocation: this skill loads as `oswald:model` (plugin mode, frontmatter
+> `name: model`) or as the directory-derived `oswald-model` (pack mode).

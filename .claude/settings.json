@@ -5,8 +5,37 @@
       "mcp__dbt-build__clone",
       "mcp__git__merge_pull_request",
       "mcp__git__merge",
-      "mcp__ticketing__delete_issue"
+      "mcp__ticketing__delete_issue",
+
+      "mcp__github__create_pull_request",
+      "mcp__github__merge_pull_request",
+      "mcp__github__create_branch",
+      "mcp__github__push",
+      "mcp__github__push_files",
+      "mcp__github__create_or_update_file",
+      "mcp__github__delete_file",
+      "mcp__github__fork_repository",
+      "mcp__github__create_*",
+      "mcp__github__update_*",
+      "mcp__github__delete_*",
+      "mcp__github__merge_*",
+      "mcp__github__push*",
+      "mcp__github__fork_*",
+
+      "mcp__atlassian__editJiraIssue",
+      "mcp__atlassian__updateJiraIssue",
+      "mcp__atlassian__deleteJiraIssue",
+      "mcp__atlassian__createJiraIssue",
+      "mcp__atlassian__transitionJiraIssue",
+      "mcp__atlassian__addCommentToJiraIssue",
+      "mcp__atlassian__addAttachmentToJiraIssue",
+      "mcp__atlassian__create*",
+      "mcp__atlassian__update*",
+      "mcp__atlassian__delete*",
+      "mcp__atlassian__edit*",
+      "mcp__atlassian__transition*",
+      "mcp__atlassian__add*"
     ]
   },
-  "_comment": "Defense-in-depth Rule-of-Two permission layer (RESEARCH Pattern 2, Layer 2). Per-role tool scoping is enforced in each subagent SKILL.md frontmatter (allowed-tools/disallowed-tools): the oswald-eda fork denies mcp__dbt-build__* / git-write so the read-only EDA stage can never reach a build or PR tool; the oswald-model fork denies ticketing-read / mcp__dbt-eda__* so the untrusted ticket never enters the write context. These project-wide deny rules are the always-on backstop: clone (highest blast radius) and any merge tool are denied for EVERY skill/context — merge is a human-only gate behind branch protection (SEC-03), and Oswald never holds a merge tool in any role."
+  "_comment": "Defense-in-depth Rule-of-Two permission layer (RESEARCH Pattern 2, Layer 2). Per-role tool scoping is enforced in each subagent SKILL.md frontmatter (allowed-tools/disallowed-tools): the oswald-eda fork denies mcp__dbt-build__* / git-write so the read-only EDA stage can never reach a build or PR tool; the oswald-model fork denies ticketing-read / mcp__dbt-eda__* so the untrusted ticket never enters the write context. These project-wide deny rules are the always-on backstop: clone (highest blast radius) and any LOCAL merge tool (mcp__git__merge_pull_request / mcp__git__merge — the M1 baseline) are denied for EVERY skill/context. The borrowed-connector destructive surface is denied two ways (CR-02): explicit literal names for the VERIFIED real destructive tools (github: create_pull_request/merge_pull_request/create_branch/push/push_files/create_or_update_file/delete_file/fork_repository; atlassian: editJiraIssue/updateJiraIssue/deleteJiraIssue/createJiraIssue/transitionJiraIssue/addCommentToJiraIssue/addAttachmentToJiraIssue) PLUS wildcard deny patterns over the known-destructive verb prefixes (mcp__github__create_*/update_*/delete_*/merge_*/push*/fork_*, mcp__atlassian__create*/update*/delete*/edit*/transition*/add*) so a connector tool not enumerated literally is still caught — the backstop has no holes where it is load-bearing (Pitfall 5). The primary scoping remains the per-fork allowed-tools ALLOWLIST (the EDA fork's 9 read tools); this deny list is the defense-in-depth net under it and the `oswald validate` binding probe, which WARNs naming any un-scopable borrowed destructive power via the shared verb-stem detector (D-06). Ticket WRITE belongs only to the deterministic write-back glue, never the EDA fork (D-10). Merge stays a human-only gate behind branch protection (SEC-03); Oswald never holds a merge tool in any role, local or borrowed."
 }

@@ -23,10 +23,49 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from tests.harness.eda import SourceProfile, profile_source
+from tests.harness.writeback import write_spec_back
 
 # The ordered stage boundaries the orchestrator exposes (D-12). M3 converts each
 # into a formal blocking gate. MUST match test_pipeline_stages.EXPECTED_STAGES.
+#
+# Gates are sequencing markers BETWEEN these five unchanged pipeline stages — they
+# add no sixth stage, so STAGES stays in lock-step with EXPECTED_STAGES.
 STAGES: list[str] = ["intake_eda", "plan", "model", "build", "pr"]
+
+# The three explicit Phase-1.1 human gates (D-09), each seated on an existing stage
+# seam: Gate 1 after ``intake_eda`` (refine→approve, + the Gate-1 write-back on
+# approval), Gate 2 after ``plan`` (approve before build), Gate 3 after ``build``
+# (approve before opening the PR). The PR is terminal — there is no Gate 4 that
+# would let the bot merge (SEC-03; the bot is PR-only). These names are the
+# sequencing contract test_pipeline_stages.test_three_gates_sequence asserts.
+GATES: list[str] = ["refine", "plan", "build"]
+
+
+class GateError(RuntimeError):
+    """A human gate was reached without approval (fail-closed, D-09).
+
+    Raised by :func:`gate` when ``approved is not True``. A named ``RuntimeError``
+    subclass mirroring the fail-closed precondition style already used by ``build``
+    (rejecting a non-sandbox target) and ``model``/``pr`` (defensive RuntimeErrors):
+    a gate blocks progression until a human approves — there is no implicit pass.
+    """
+
+
+def gate(name: str, *, approved: bool) -> None:
+    """Fail-closed human gate: block progression unless a human approved (D-09).
+
+    The three orchestrator gates (``refine`` / ``plan`` / ``build``) are explicit,
+    config-driven seams. This helper mirrors ``build``'s fail-closed precondition
+    (``target != "sandbox"`` → raise): an unapproved gate raises :class:`GateError`
+    NAMING the gate, so a skipped approval can never silently advance the pipeline
+    (the M3 blocking-gate seam, D-12). ``approved is True`` is required exactly —
+    a truthy-but-not-True value (e.g. a non-empty string) does not pass.
+    """
+    if approved is not True:
+        raise GateError(
+            f"gate {name!r} reached without human approval — the pipeline is "
+            "fail-closed at every gate (D-09); a human must approve to proceed"
+        )
 
 
 def branch_for_ticket(ticket_id: str) -> str:
@@ -48,6 +87,13 @@ class StageContext:
     profiles: dict[str, SourceProfile] = field(default_factory=dict)
     inferred_grain: list[str] = field(default_factory=list)
     open_questions: list[str] = field(default_factory=list)
+    # The EDA fork's PROPOSED, spec-level refinement (its propose-only return). These
+    # are the only fields the Gate-1 write-back consumes — derived from the ticket
+    # the EDA fork reads + its findings, never the raw warehouse profiling rows. The
+    # human approves them at Gate 1; the deterministic glue writes them back (D-10).
+    proposed_intent: str = ""
+    proposed_sources: list[str] = field(default_factory=list)
+    proposed_acceptance_criteria: list[str] = field(default_factory=list)
     plan: dict[str, Any] | None = None
     models_written: list[str] = field(default_factory=list)
     build_succeeded: bool = False
@@ -78,6 +124,55 @@ def intake_eda(
     for profile in ctx.profiles.values():
         ctx.open_questions.extend(profile.open_questions)
     return ctx
+
+
+# --------------------------------------------------------------------------- #
+# Gate 1 — REFINE → APPROVE  (deterministic spec-level write-back; D-09/D-10/D-11)
+# --------------------------------------------------------------------------- #
+def refine_gate_writeback(
+    ctx: StageContext,
+    *,
+    approved: bool,
+    ticketing: Any,
+) -> Any:
+    """On Gate-1 approval, deterministically write the refined spec back to the ticket.
+
+    This is the Gate-1 (refine→approve) handoff: it is **orchestrator glue** — CODE,
+    NOT the EDA agent and NOT an LLM tool-call (D-10). It mirrors ``model``'s "acts
+    on the approved handoff, never on ``ctx.ticket_text``" discipline: the payload is
+    built from the EDA-PROPOSED spec ONLY (the inferred grain + the proposed
+    intent/sources/acceptance), never from raw ``ctx.ticket_text`` or raw profiling
+    output. The deterministic :func:`tests.harness.writeback.write_spec_back` glue
+    then enforces fail-closed approval and the spec-field allowlist (D-11) before any
+    ticket write — so warehouse-derived data (row counts, samples, distinct lists)
+    can never reach the ticket. The EDA fork never holds ``ticketing``.
+
+    The first explicit ``gate("refine", ...)`` blocks an unapproved write-back at the
+    sequencing layer; ``write_spec_back`` is itself fail-closed on ``approved`` as the
+    defense-in-depth backstop (a gate skip can never write).
+    """
+    gate("refine", approved=approved)
+    payload = _proposed_spec_payload(ctx)
+    return write_spec_back(
+        ctx.ticket_id, payload, approved=approved, ticketing=ticketing
+    )
+
+
+def _proposed_spec_payload(ctx: StageContext) -> dict[str, Any]:
+    """Build the spec-only write-back payload from the EDA-PROPOSED fields ONLY.
+
+    Consumes only the proposed spec text on ``ctx`` (the confirmed/inferred grain
+    plus the proposed intent/sources/acceptance) — never ``ctx.ticket_text`` and
+    never raw warehouse profiling output. The four keys map exactly onto
+    ``writeback.SPEC_FIELDS`` (intent/grain/sources/acceptance_criteria, D-11); any
+    warehouse-derived key would be rejected by ``guard_writeback`` downstream.
+    """
+    return {
+        "intent": ctx.proposed_intent,
+        "grain": list(ctx.inferred_grain),
+        "sources": list(ctx.proposed_sources or ctx.profiles),
+        "acceptance_criteria": list(ctx.proposed_acceptance_criteria),
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -181,9 +276,13 @@ def pr(
 
 __all__ = [
     "STAGES",
+    "GATES",
+    "GateError",
+    "gate",
     "StageContext",
     "branch_for_ticket",
     "intake_eda",
+    "refine_gate_writeback",
     "plan",
     "model",
     "build",

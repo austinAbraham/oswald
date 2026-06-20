@@ -128,16 +128,22 @@ def validate(
     absence is a WARN, not a FAIL (SEC-03). Exits non-zero on any FAIL.
     """
     from oswald.preflight import ProbeReport
+    from oswald.preflight.binding_probe import probe_binding
     from oswald.preflight.git_probe import probe_repo
     from oswald.preflight.mcp_probe import probe_servers
-    from oswald.preflight.model_probe import probe_model
+    from oswald.preflight.model_probe import probe_model, probe_model_residency
 
     cfg = _load_config_or_exit(config)
 
     report = ProbeReport()
     report.extend(probe_servers(cfg))
     report.add(probe_model(cfg))
+    # MODE-01 / D-07: locked-down requires a self-hosted model endpoint; this FAILs
+    # (operator-visible, drives a non-zero exit) when locked-down points at a public
+    # off-boundary host. PASS under convenience (trust boundary documented).
+    report.extend(probe_model_residency(cfg))
     report.extend(probe_repo(cfg))
+    report.extend(probe_binding(cfg))
 
     _emit_report(report)
 

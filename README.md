@@ -23,7 +23,11 @@ writing**, running entirely inside your own boundary.
 
 ## Why it's different
 
-- **Bring-your-own-everything.** Your LLM (via [LiteLLM](https://github.com/BerkeleyAI/litellm)),
+- **Installs as a Claude Code plugin — bring your connectors, or use ours.** In the default
+  **convenience posture** Oswald rides the MCP connectors you already have in Claude Code
+  (Atlassian/Jira, GitHub, …) instead of making you stand up your own; a config `posture`
+  flips it to a **locked-down**, all-local, egress-enforced mode for air-gapped orgs.
+- **Bring-your-own-everything.** Your LLM (via [LiteLLM](https://github.com/BerriAI/litellm)),
   your warehouse, your MCP servers. Schema, EDA samples, and ticket text never leave your
   environment — a CI-verified egress-allowlist test asserts only configured endpoints are
   contacted, with telemetry off by default.
@@ -43,40 +47,46 @@ writing**, running entirely inside your own boundary.
 
 ## Status
 
-🚧 **Early development.** Milestone 1 (the portable pack + secured single-ticket run) is
-built and unit/integration-tested; the live end-to-end run against a real warehouse is the
-current human-verification gate.
+🚧 **Early / experimental.** The harness is built and the test suite is green (131 tests),
+but **the live end-to-end run has not yet been verified by a human** — if you run a real
+ticket you're effectively the first. See [`SETUP.md`](SETUP.md) for what works today vs.
+what's first-run, and please file what breaks.
 
 | Milestone | Scope | Status |
 |-----------|-------|--------|
 | **M1** | The pack (config schema, dbt conventions, intake-spec, EDA/modeling skills), MCP wiring, `oswald init`/`validate` CLI, Rule-of-Two split, CI-verified data-residency egress test | ✅ built · live run pending |
+| **M1.1** | Claude Code plugin packaging, connector binding (ride host MCP connectors), `convenience`/`locked-down` posture, the 3-gate human-in-the-loop flow + approval-gated ticket write-back | ✅ built · live run pending |
 | **M2** | Watcher + durable Postgres state (`docker compose up`), two-layer intake completeness check, restart-safe reconciler | ⬜ planned |
 | **M3** | Full gated pipeline (plan → approve → model → validate → PR), acceptance-criteria reconciliation as a pre-merge gate, structured audit log | ⬜ planned |
 | **M4** | Swappable warehouse/ticketing/git adapters, Helm chart, optional Temporal HA tier, docs site | ⬜ planned |
 | **M5** | Optional inbound webhook to reduce poll latency (polling cursor stays source of truth) | ⬜ optional |
 
-## Quickstart (M1 assisted run)
+## Quickstart
 
-Requires Python 3.12–3.13 and [`uv`](https://docs.astral.sh/uv/).
+**Full step-by-step (read this first): [`SETUP.md`](SETUP.md).** The short version:
 
 ```bash
-# 1. Install dependencies into a pinned uv environment
+# 1. Clone + install the CLI (Python 3.12–3.13 + uv)
+git clone https://github.com/austinAbraham/oswald.git && cd oswald
 uv sync
+uv run pytest -q                 # sanity: all green
 
-# 2. Scaffold a starter config + example ticket
-uv run oswald init
+# 2. Scaffold + configure
+uv run oswald init               # writes config.yaml + tickets/DEMO-1.md
+#   edit config.yaml: pick `posture` (convenience default) + `bindings`
+#   convenience mode: no model key / git token needed — it rides Claude Code's
+#   model + your existing Atlassian/GitHub connectors. Warehouse = your dbt connection.
 
-# 3. Fill in config.yaml — secrets are referenced from env vars, never inline:
-#    export SF_ACCOUNT=... MODEL_API_KEY=... BOT_TOKEN=...
-#    (see config.example.yaml and docs/minimal-permissions.md)
-
-# 4. Preflight: checks MCP connectivity, model reachability + a capability probe,
-#    and repo/warehouse access — failing with a specific, actionable error.
+# 3. Preflight (names exactly what's missing)
 uv run oswald validate
+```
 
-# 5. Drive one ready ticket end-to-end inside Claude Code via the gated skill:
-#    run the /oswald-run skill on your ticket. It orchestrates read-only EDA,
-#    modeling on a feature branch, a sandbox dbt build + grain tests, and opens a PR.
+Then, in **Claude Code**:
+
+```
+/plugin marketplace add austinAbraham/oswald
+/plugin install oswald@oswald
+/oswald:run DEMO-1               # walk the 3 gates → a PR
 ```
 
 The pack is **runtime-agnostic** — the same config, conventions, intake-spec, and prompts
@@ -104,9 +114,10 @@ invariant). The autonomous service runtime (M2) adds Pydantic-AI + DBOS on Postg
 
 ## Contributing
 
-Issues and PRs welcome. This is early-stage; the [`/.planning`](.planning) directory
-documents the roadmap, requirements, and design decisions if you want to understand where
-it's headed.
+Issues and PRs welcome — this is early-stage and the live path is unproven, so bug reports
+from real runs are especially useful. See [`SETUP.md`](SETUP.md) for how to try it and what
+to expect. When filing, include your `posture`/`bindings` and the `oswald validate` output
+(it's secret-free by design).
 
 ## License
 

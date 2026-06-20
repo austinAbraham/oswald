@@ -19,7 +19,7 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 import yaml
 from pydantic import (
@@ -162,6 +162,107 @@ class SandboxConfig(_Section):
 
 
 # ---------------------------------------------------------------------------
+# Connector binding (BIND-01 / MODE-01)
+# ---------------------------------------------------------------------------
+
+#: POSITIVE allowlist (WR-05): the known-local dbt-mcp server names the warehouse
+#: role may bind to without an explicit ``local: true`` marker. The warehouse-data
+#: path stays local (dbt-mcp) in BOTH postures (D-05/D-08). A name denylist of
+#: hosted connectors was trivially evaded by aliasing a hosted Snowflake/dbt-Cloud
+#: connector under a fresh ``mcp_servers`` key (``sf``/``wh``/``snow-prod``/…) — an
+#: allowlist cannot be: any server not on it (and not explicitly marked local) is
+#: rejected by default, fail-safe.
+_LOCAL_WAREHOUSE_SERVERS: frozenset[str] = frozenset(
+    {
+        "dbt-eda",  # default local dbt-mcp EDA (read-only) server
+        "dbt-build",  # local dbt-mcp build (sandbox-write) server
+        "dbt-local",  # generic local dbt-mcp alias
+        "dbt-mcp",  # bare local dbt-mcp launcher name
+    }
+)
+
+
+class RoleBinding(_Section):
+    """One logical role bound to an MCP server + a logical→actual tool-name map.
+
+    The ``server`` is the MCP server (local like ``dbt-eda`` or a borrowed host
+    connector like ``github``/``atlassian``) that provides this role. ``tool_map``
+    captures cross-vendor renames (logical ``get_issue`` → actual ``getJiraIssue``);
+    the install-mode prefix (``mcp__...`` vs ``mcp__plugin_oswald_...``) is handled
+    by :mod:`oswald.binding.resolve`, never here.
+
+    ``local`` is the explicit operator escape hatch for the warehouse residency
+    allowlist (WR-05): set it to ``true`` to assert a non-default ``server`` name
+    is a LOCAL dbt-mcp launcher (no remote URL, no ``DBT_HOST``/``DBT_TOKEN``).
+    It is the operator's signed statement that the warehouse-data path stays
+    on-boundary; it does NOT relax residency for a genuinely hosted connector.
+    """
+
+    server: str = Field(
+        description="MCP server providing this role, e.g. 'dbt-eda'/'github'/'atlassian'"
+    )
+    tool_map: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "logical tool -> actual tool on the server "
+            "(e.g. 'get_issue' -> 'getJiraIssue')"
+        ),
+    )
+    local: bool = Field(
+        default=False,
+        description=(
+            "Explicitly assert this server is a LOCAL (on-boundary) dbt-mcp "
+            "launcher — the operator escape hatch for the warehouse residency "
+            "allowlist (WR-05). Only set true for a real local stdio launcher."
+        ),
+    )
+
+
+class BindingsConfig(_Section):
+    """Per-role connector binding (BIND-01). Warehouse defaults to local dbt-mcp.
+
+    The warehouse role ALWAYS defaults to the local ``dbt-eda`` server and may
+    never be bound to anything but a KNOWN-LOCAL server (or one explicitly marked
+    ``local: true``) — D-05/D-08 residency rule enforced at parse time via the
+    POSITIVE allowlist in :meth:`_warehouse_stays_local`. ``ticketing`` and ``git``
+    are optional borrowed-connector bindings.
+    """
+
+    profile: Literal["dbt-local", "github", "atlassian", "custom"] = "dbt-local"
+    warehouse: RoleBinding = Field(default_factory=lambda: RoleBinding(server="dbt-eda"))
+    ticketing: RoleBinding | None = None
+    git: RoleBinding | None = None
+
+    @field_validator("warehouse")
+    @classmethod
+    def _warehouse_stays_local(cls, value: RoleBinding) -> RoleBinding:
+        """Require the warehouse role to bind to a KNOWN-LOCAL server (D-08, residency).
+
+        POSITIVE allowlist (WR-05), not a name denylist: the warehouse-data path
+        stays local in both postures, so the ``server`` must be one of the
+        known-local dbt-mcp names (:data:`_LOCAL_WAREHOUSE_SERVERS`) OR be
+        explicitly marked ``local: true`` by the operator. A hosted connector
+        aliased under any other ``mcp_servers`` key (``sf``/``wh``/``snow-prod``/
+        ``dbt-remote``/…) is rejected by default — it cannot evade the rule by
+        renaming, which a denylist of seven hosted names could.
+        """
+        if value.local:
+            # Operator explicitly asserts this is a local dbt-mcp launcher.
+            return value
+        if value.server not in _LOCAL_WAREHOUSE_SERVERS:
+            allowed = ", ".join(sorted(_LOCAL_WAREHOUSE_SERVERS))
+            raise ValueError(
+                f"warehouse role must stay local (D-05/D-08): server {value.server!r} "
+                f"is not a known-local dbt-mcp server (expected one of: {allowed}). "
+                "Bind the warehouse to the local dbt-mcp server (e.g. 'dbt-eda'), or "
+                "if this IS a local dbt-mcp launcher under a custom name, mark it "
+                "explicitly with 'local: true'. Schema/EDA data never egresses "
+                "off-boundary — a hosted connector under any alias is rejected."
+            )
+        return value
+
+
+# ---------------------------------------------------------------------------
 # Top-level config
 # ---------------------------------------------------------------------------
 
@@ -180,6 +281,12 @@ class OswaldConfig(_Section):
     conventions: ConventionsConfig = Field(default_factory=ConventionsConfig)
     gates: GatesConfig = Field(default_factory=GatesConfig)
     sandbox: SandboxConfig = Field(default_factory=SandboxConfig)
+    # Posture (MODE-01 / D-07): convenience = host/hosted peripheral connectors +
+    # host model allowed (trust boundary documented, not air-gapped); locked-down =
+    # local servers + self-hosted model + the egress-allowlist invariant enforced.
+    # The warehouse-data path stays local in BOTH postures (D-08).
+    posture: Literal["convenience", "locked-down"] = "convenience"
+    bindings: BindingsConfig = Field(default_factory=BindingsConfig)
 
     @field_validator("mcp_servers")
     @classmethod

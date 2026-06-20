@@ -1,0 +1,13 @@
+{
+  "name": "oswald",
+  "owner": { "name": "Austin Abraham", "email": "austin.abraham.ah@gmail.com" },
+  "plugins": [
+    {
+      "name": "oswald",
+      "source": ".",
+      "description": "Open dbt Modeling Agent Harness — gated single-ticket dbt pipeline",
+      "version": "0.1.0",
+      "license": "Apache-2.0"
+    }
+  ]
+}

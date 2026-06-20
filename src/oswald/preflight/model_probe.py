@@ -28,9 +28,11 @@ models and record pass/fail for the published capability matrix.
 
 from __future__ import annotations
 
+import ipaddress
 import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlsplit
 
 from oswald.preflight import CheckResult, CheckStatus
 
@@ -235,8 +237,205 @@ def probe_model(config: OswaldConfig, completion: Any = None) -> CheckResult:
     )
 
 
+# --------------------------------------------------------------------------- #
+# locked-down model-residency probe (D-07 / MODE-01).
+#
+# Under ``locked-down`` the model endpoint MUST be a self-hosted / internal host —
+# never a public, off-boundary provider endpoint — so prompts / EDA samples / ticket
+# text never leave the user's boundary. Under ``convenience`` the trust boundary is
+# documented, not enforced (the host may use a public model), so this probe is a
+# PASS there. The probe is deterministic and offline (it inspects the configured
+# endpoint string only — it never resolves DNS or makes a call), and it never echoes
+# a secret (CLI-02 / T-05-01).
+# --------------------------------------------------------------------------- #
+
+#: Hostname suffixes that denote a self-hosted / internal endpoint (private DNS,
+#: Kubernetes service DNS, RFC 6762 .local, common intranet conventions).
+_INTERNAL_HOST_SUFFIXES: tuple[str, ...] = (
+    ".internal",
+    ".local",
+    ".lan",
+    ".intranet",
+    ".svc",
+    ".svc.cluster.local",
+    ".cluster.local",
+)
+
+#: Known PUBLIC, off-boundary model-provider hosts — named explicitly so a
+#: locked-down FAIL can say *why* the endpoint is off-boundary (clearer than a bare
+#: "public host"). This is an aid to the message, NOT the classifier: any
+#: publicly-routable host is rejected regardless of membership here.
+_KNOWN_PUBLIC_MODEL_HOSTS: frozenset[str] = frozenset(
+    {
+        "api.anthropic.com",
+        "api.openai.com",
+        "api.mistral.ai",
+        "api.cohere.ai",
+        "api.groq.com",
+        "generativelanguage.googleapis.com",
+        "openrouter.ai",
+    }
+)
+
+
+def _endpoint_host(endpoint: str) -> str:
+    """Extract the bare hostname from a model endpoint URL (no scheme/port/path).
+
+    Tolerates a bare ``host`` / ``host:port`` (no scheme) by retrying with a dummy
+    scheme so ``urlsplit`` populates ``hostname`` instead of treating it as a path.
+    """
+    parsed = urlsplit(endpoint.strip())
+    host = parsed.hostname
+    if host is None:
+        parsed = urlsplit(f"//{endpoint.strip()}")
+        host = parsed.hostname
+    return (host or "").lower()
+
+
+def _labels(host: str) -> list[str]:
+    """Split a hostname into its DNS labels, dropping a trailing root dot."""
+    return [lbl for lbl in host.strip(".").split(".") if lbl]
+
+
+def _embeds_public_domain(host: str) -> bool:
+    """True iff ``host`` embeds a known public model domain as a label sequence.
+
+    Exact LABEL-SEQUENCE matching (not substring): ``api.anthropic.com.evil.internal``
+    embeds the labels ``[api, anthropic, com]`` and so is flagged, while a benign
+    ``anthropic-mirror.internal`` (one label, no embedded public domain) is not. This
+    is the WR-02 guard: a public domain buried as a deeper label of an
+    attacker-registrable ``.internal``/``.local`` suffix must NOT be trusted as
+    on-boundary just because the suffix matches.
+    """
+    host_labels = _labels(host)
+    for public in _KNOWN_PUBLIC_MODEL_HOSTS:
+        pub_labels = _labels(public)
+        if not pub_labels:
+            continue
+        # Slide the public label sequence across the host labels (contiguous match).
+        for start in range(len(host_labels) - len(pub_labels) + 1):
+            if host_labels[start : start + len(pub_labels)] == pub_labels:
+                return True
+    return False
+
+
+def _has_internal_suffix(host: str) -> bool:
+    """True iff ``host`` ends in a recognized internal suffix on a LABEL boundary.
+
+    ``str.endswith`` with dotted suffixes is already label-boundary-safe
+    (``.internal`` matches ``vllm.internal`` but not ``notinternal``); kept as a
+    named helper so the residency policy reads as exact-suffix matching, not a
+    substring heuristic.
+    """
+    return host.endswith(_INTERNAL_HOST_SUFFIXES)
+
+
+def _is_self_hosted_host(host: str) -> bool:
+    """True iff ``host`` denotes a self-hosted / internal (on-boundary) endpoint.
+
+    Conservative, residency-safe classification under locked-down. On-boundary ONLY
+    if the host is one of:
+
+    * ``localhost`` / a loopback / private (RFC1918) / link-local IP literal;
+    * a bare SINGLE-LABEL hostname (no dot — an intranet short name);
+    * a hostname ending in an explicitly-recognized internal suffix
+      (:data:`_INTERNAL_HOST_SUFFIXES`), matched on a LABEL boundary.
+
+    AND it must NOT embed a known public model domain as a label sequence — so
+    ``api.anthropic.com.evil.internal`` (a public domain buried under an
+    attacker-registrable ``.internal`` suffix) is FAILed, not trusted (WR-02).
+    Anything else — a publicly-routable IP, a public registrable domain, or an
+    internal-suffixed host that embeds a public domain — is off-boundary.
+    """
+    if not host:
+        # An unparseable / empty host cannot be proven on-boundary — fail closed.
+        return False
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        ip = None
+    if ip is not None:
+        # An IP literal is self-hosted iff it is loopback / private / link-local.
+        # (No DNS-name spoofing applies to a literal, so no embed check needed.)
+        return ip.is_loopback or ip.is_private or ip.is_link_local
+    if host == "localhost":
+        return True
+    # A spoofed host that buries a public model domain under an internal suffix or
+    # short name must never be trusted as on-boundary (WR-02).
+    if _embeds_public_domain(host):
+        return False
+    # A single-label hostname (no dot) is an intranet short name.
+    if "." not in host:
+        return True
+    # Otherwise it must carry a recognized internal suffix (exact label boundary).
+    return _has_internal_suffix(host)
+
+
+def probe_model_residency(config: OswaldConfig) -> list[CheckResult]:
+    """Assert the model endpoint is self-hosted under ``locked-down`` (D-07/MODE-01).
+
+    Returns a list (composes with ``report.extend(...)`` like ``probe_servers`` /
+    ``probe_binding``) carrying exactly one :class:`CheckResult`:
+
+    * ``locked-down`` + a public / off-boundary endpoint → ``FAIL`` naming the
+      endpoint host and the posture so the operator can act (CLI-02). It never
+      echoes a secret — only the non-secret endpoint host appears.
+    * ``locked-down`` + a self-hosted / internal endpoint → ``PASS``.
+    * ``convenience`` → ``PASS`` (the trust boundary is documented, not enforced —
+      the host may legitimately use a public model under convenience, D-07).
+
+    Deterministic and offline: it inspects the configured endpoint string only.
+    """
+    posture = getattr(config, "posture", "convenience")
+    host = _endpoint_host(config.model.endpoint)
+
+    if posture != "locked-down":
+        return [
+            CheckResult(
+                name="model:residency",
+                status=CheckStatus.PASS,
+                message=(
+                    f"posture '{posture}': model endpoint residency is documented, "
+                    "not enforced (the model host may be public under convenience)"
+                ),
+            )
+        ]
+
+    if _is_self_hosted_host(host):
+        return [
+            CheckResult(
+                name="model:residency",
+                status=CheckStatus.PASS,
+                message=(
+                    f"posture 'locked-down': model endpoint host '{host}' is "
+                    "self-hosted/internal (on-boundary)"
+                ),
+            )
+        ]
+
+    public_note = (
+        " (a known public model-provider endpoint)"
+        if host in _KNOWN_PUBLIC_MODEL_HOSTS
+        else ""
+    )
+    return [
+        CheckResult(
+            name="model:residency",
+            status=CheckStatus.FAIL,
+            message=(
+                f"posture 'locked-down' requires a self-hosted model endpoint, but "
+                f"'{host}'{public_note} is a public/off-boundary host — point "
+                "model.endpoint at an internal/self-hosted endpoint (e.g. a local "
+                "LiteLLM proxy, vLLM, or Ollama) so prompts/EDA/ticket text stay "
+                "on-boundary"
+            ),
+        )
+    ]
+
+
 __all__ = [
     "probe_model",
+    "probe_model_residency",
     "run_capability_probe",
     "CapabilityProbeResult",
     "PLAN_TOOL_SCHEMA",

@@ -114,3 +114,36 @@ gates:
 sandbox:
   schema_name: OSWALD_SANDBOX
   target: sandbox
+
+# ---------------------------------------------------------------------------
+# Posture (MODE-01 / D-07). Default `convenience`: ride whatever connectors the
+# host already has (peripheral ticket/git SaaS) + the host model; the trust
+# boundary is documented, not air-gapped. `locked-down` requires local servers +
+# a self-hosted model endpoint and ENFORCES the egress allowlist. In BOTH
+# postures the warehouse-data path stays local (D-08) — never relaxed.
+# ---------------------------------------------------------------------------
+posture: convenience
+
+# ---------------------------------------------------------------------------
+# Connector bindings (BIND-01 / D-04). Bind each logical role to the MCP server
+# that provides it. The warehouse role ALWAYS stays local (dbt-mcp) — the schema
+# REJECTS a hosted warehouse connector at parse time (D-05/D-08). Skills/orchestrator
+# reference LOGICAL tool names; the binding layer resolves them to concrete
+# `mcp__...` names (install-mode aware). `tool_map` captures cross-vendor renames
+# (logical `get_issue` -> actual `getJiraIssue` on Atlassian).
+# ---------------------------------------------------------------------------
+bindings:
+  profile: dbt-local            # dbt-local | github | atlassian | custom
+  warehouse:
+    server: dbt-eda             # ALWAYS the local dbt-mcp server (D-05/D-08)
+  # ticketing: ride a borrowed host connector (peripheral; convenience posture).
+  # Uncomment + point at the host connector's server name; map logical->actual tools.
+  # ticketing:
+  #   server: atlassian
+  #   tool_map:
+  #     get_issue: getJiraIssue
+  #     search_issues: searchJiraIssues
+  # git:
+  #   server: github
+  #   tool_map:
+  #     open_pr: create_pull_request

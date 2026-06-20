@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "oswald",
+  "description": "Open dbt Modeling Agent Harness — drives a ready ticket to a sandbox-validated dbt PR with Rule-of-Two and data residency built in",
+  "author": { "name": "Austin Abraham", "email": "austin.abraham.ah@gmail.com" },
+  "repository": "https://github.com/austinAbraham/oswald",
+  "license": "Apache-2.0",
+  "keywords": ["dbt", "analytics-engineering", "mcp", "data-residency"],
+  "skills": ["./.claude/skills/"],
+  "mcpServers": "./.mcp.json"
+}

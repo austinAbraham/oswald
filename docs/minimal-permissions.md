@@ -138,5 +138,80 @@ ticket text leaves the boundary — asserted by the egress-allowlist test (SEC-0
 
 ---
 
-*SEC-05 draft — Phase 1 (M1). The full minimal-permissions doc with multi-warehouse
-and multi-git adapter grants is an M4 deliverable.*
+## 4. Connector binding — local vs borrowed host connectors
+
+Oswald binds **logical roles** (warehouse-read, warehouse-build, ticketing,
+git/PR) to **concrete MCP servers**. A binding is either:
+
+- **local** — a server Oswald launches inside your boundary (the bundled
+  `dbt-mcp` instances `dbt-eda`/`dbt-build`, or a local warehouse/ticketing/git
+  MCP you point it at). Data stays in your environment; you scope the server's
+  tools.
+- **borrowed** — a connector already configured in the **host** (Claude Code's
+  own GitHub or Atlassian/Rovo connector). It is convenient (no extra server to
+  run) but Oswald **cannot disable its destructive tools at the source** — the
+  host owns the tool surface.
+
+**The warehouse role always defaults to local** (D-05, D-08): the warehouse half
+of the Rule of Two is the residency-critical path, so it is never bound to a
+hosted/off-boundary connector (e.g. a managed Snowflake MCP). Only *peripheral*
+roles (ticketing, git, docs) may be borrowed.
+
+---
+
+## 5. Posture — `convenience` vs `locked-down`
+
+A single `posture` setting names the trust boundary you accept:
+
+| Posture | Peripheral connectors (tickets/git/docs) | Warehouse + model SQL | What it enforces |
+|---------|------------------------------------------|-----------------------|------------------|
+| `convenience` | May be **borrowed** host connectors; their egress is **documented**, not blocked (their data already lives in that SaaS) | **Stays local** — unchanged from M1 (D-08) | Documents the boundary; warehouse/model path still local-only |
+| `locked-down` | Local servers only | **Stays local** | Enforces local MCP servers + a self-hosted model endpoint + the full egress allowlist; a non-allowlisted peripheral host is BLOCKED |
+
+The load-bearing invariant (D-08): **the warehouse-data-stays-local guarantee
+holds in BOTH postures.** `convenience` relaxes only peripheral systems whose
+data already lives in that SaaS; it never relaxes the warehouse or model-SQL
+path. A leak of warehouse data to a non-configured host still raises
+`SocketConnectBlockedError` under either posture (asserted by the SEC-04 egress
+negative control).
+
+---
+
+## 6. Borrowed-connector Rule-of-Two backstop
+
+A borrowed host connector exposes **un-scopable destructive tools** — Oswald
+cannot turn them off at the source (Pitfall 5). The Rule-of-Two over borrowed
+tools is enforced in depth:
+
+1. **Per-fork `allowed-tools` allowlists** (primary): the `oswald-eda` fork holds
+   only read tools; ticket *write* belongs only to the deterministic write-back
+   glue, never the EDA fork (D-10).
+2. **`oswald validate` binding probe** (D-06): connects each bound server,
+   `list_tools()`, and **WARNs naming** any un-scopable borrowed destructive tool
+   reachable by an agent (e.g. `mcp__github__merge_pull_request`,
+   `mcp__atlassian__editJiraIssue`). It is a warning, not a hard failure —
+   borrowed-connector scoping is the host's policy; Oswald surfaces the risk.
+3. **`.claude/settings.json` deny backstop** (always-on net): the borrowed
+   destructive tools are denied project-wide as defense-in-depth —
+   `mcp__github__merge_pull_request` (GitHub connector merge) and the Atlassian
+   write tools `mcp__atlassian__editJiraIssue` / `createJiraIssue` /
+   `transitionJiraIssue` / `addCommentToJiraIssue`. These sit alongside the M1
+   LOCAL-git baseline (`mcp__git__merge_pull_request`, `mcp__git__merge`,
+   `mcp__dbt-build__clone`, `mcp__ticketing__delete_issue`).
+
+Merge stays a **human-only gate behind branch protection** (SEC-03) — borrowed or
+local, Oswald never holds a merge tool in any role.
+
+> **Plugin-mode caveat (#9427):** when Oswald is installed as a Claude Code
+> plugin, a host bug in plugin-bundled `.mcp.json` env-var expansion
+> (anthropics/claude-code#9427) is version-dependent and out of CI scope. **Pack
+> mode** (clone the repo, project-scope `.mcp.json` with verified `${VAR}` /
+> `${VAR:-default}` expansion) is the residency-guaranteed path; verify
+> plugin-mode secret delivery at the live human-verify checkpoint on your
+> installed Claude Code version.
+
+---
+
+*SEC-05 draft — Phase 1 (M1) + Phase 1.1 binding/posture/borrowed-connector
+sections. The full minimal-permissions doc with multi-warehouse and multi-git
+adapter grants is an M4 deliverable.*

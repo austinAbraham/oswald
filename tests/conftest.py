@@ -47,19 +47,38 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 # --------------------------------------------------------------------------- #
-# SEC-04 / D-11 — egress allowlist
+# SEC-04 / D-08 / D-11 — egress allowlist (POSTURE-SPLIT)
 # --------------------------------------------------------------------------- #
-# Mirrors RESEARCH §Code Examples exactly. Every host NOT in this list is denied
-# by the global ``--disable-socket`` default; the egress test opts these in via
-# ``@pytest.mark.allow_hosts(ALLOWED)``.
-ALLOWED: list[str] = [
+# Phase 1.1 splits the M1 ``ALLOWED`` allowlist into two posture-aware halves so
+# the egress test can prove the **residency-critical** warehouse/model-SQL path
+# stays local in BOTH postures (D-08, load-bearing) while only **peripheral**
+# connector hosts (tickets/git/docs SaaS) are relaxed in convenience mode.
+#
+# * ``WAREHOUSE_AND_MODEL_LOCAL`` — the model endpoint, the warehouse, and
+#   loopback for local MCP stdio / fixtures. Asserted local in BOTH postures.
+# * ``PERIPHERAL_CONNECTOR_HOSTS`` — the git + ticketing SaaS hosts. Relaxed
+#   (permitted+documented) in convenience; blocked in locked-down.
+#
+# ``ALLOWED`` MUST stay the byte-for-byte-equal *membership* of the M1 list so the
+# existing egress test's ``from tests.conftest import ALLOWED`` is unchanged:
+# ``set(ALLOWED) == set(WAREHOUSE_AND_MODEL_LOCAL) | set(PERIPHERAL_CONNECTOR_HOSTS)``.
+#
+# Every host NOT in this list is denied by the global ``--disable-socket``
+# default; the egress test opts these in via ``@pytest.mark.allow_hosts(ALLOWED)``.
+WAREHOUSE_AND_MODEL_LOCAL: list[str] = [
     "model.endpoint.internal",  # configured LiteLLM / model-gateway host
     "warehouse.internal",  # configured warehouse MCP / Snowflake host
-    "api.github.com",  # configured git host
-    "ticketing.internal",  # configured ticketing host
     "127.0.0.1",  # local MCP stdio / test fixtures
     "localhost",  # local MCP stdio / test fixtures
 ]
+PERIPHERAL_CONNECTOR_HOSTS: list[str] = [
+    "api.github.com",  # configured git host (peripheral — SaaS already holds it)
+    "ticketing.internal",  # configured ticketing host (peripheral)
+]
+ALLOWED: list[str] = WAREHOUSE_AND_MODEL_LOCAL + PERIPHERAL_CONNECTOR_HOSTS
+
+# The two postures (MODE-01 / D-07). The egress test parametrizes over these.
+POSTURES: list[str] = ["convenience", "locked-down"]
 
 
 # --------------------------------------------------------------------------- #
@@ -71,6 +90,58 @@ ALLOWED: list[str] = [
 # (highest blast radius — omitted in M1).
 EDA_TOOLS: list[str] = ["show", "compile", "list", "parse", "docs"]
 BUILD_TOOLS: list[str] = ["build", "run", "test", "compile", "list"]
+
+# Borrowed host-connector tool surfaces (BIND-02, RESEARCH §Pattern 4 — VERIFIED
+# real names). Convenience posture rides whatever connectors the host Claude Code
+# already has; ``validate`` must catch the un-scopable destructive tools these
+# expose and WARN/deny them per Rule-of-Two over borrowed tools (D-06/D-10).
+#
+# These surfaces are the REAL GitHub/Atlassian MCP write surfaces — far larger
+# than ``merge_pull_request``/``editJiraIssue`` — so the binding-probe tests
+# exercise the destructive names the original 5-name/7-fragment enumeration MISSED
+# (CR-01/CR-02/WR-03): ``create_pull_request``, ``create_branch``, ``push``,
+# ``create_or_update_file``, ``delete_file``, ``fork_repository``,
+# ``deleteJiraIssue``, ``updateJiraIssue``, …. Every name flagged ``# destructive``
+# MUST be caught by the verb-stem detector and surfaced as a WARN.
+GITHUB_BORROWED_TOOLS: list[str] = [
+    "get_pull_request",  # read-only — safe surface
+    "list_pull_requests",  # read-only — safe surface
+    "create_pull_request",  # destructive — MISSED by the old enumeration (CR-01)
+    "merge_pull_request",  # destructive — caught by old `merge` fragment
+    "create_branch",  # destructive — MISSED (CR-01)
+    "push",  # destructive — MISSED (CR-01)
+    "push_files",  # destructive — MISSED (CR-01)
+    "create_or_update_file",  # destructive — MISSED (CR-01)
+    "delete_file",  # destructive — MISSED (CR-01)
+    "fork_repository",  # destructive — MISSED (CR-01)
+]
+ATLASSIAN_BORROWED_TOOLS: list[str] = [
+    "getJiraIssue",  # read-only — OK for the EDA fork's ticketing grant
+    "searchJiraIssues",  # read-only — OK for the EDA fork
+    "editJiraIssue",  # write — write-back glue only, never the EDA fork (D-10)
+    "updateJiraIssue",  # destructive — MISSED by the old enumeration (CR-01)
+    "deleteJiraIssue",  # destructive — MISSED (CR-01)
+    "createJiraIssue",  # write
+    "transitionJiraIssue",  # write
+    "addCommentToJiraIssue",  # write
+    "addAttachmentToJiraIssue",  # destructive — MISSED (CR-01)
+]
+
+#: The borrowed destructive names the ORIGINAL 5-name/7-fragment enumeration
+#: MISSED — the adversarial inputs the CR-01/WR-03 fix must now catch. Tests
+#: assert every one of these is classified write and surfaced (so the fix is
+#: proven against the previously-invisible gap, not just the happy path).
+PREVIOUSLY_MISSED_DESTRUCTIVE: list[str] = [
+    "create_pull_request",
+    "create_branch",
+    "push",
+    "create_or_update_file",
+    "delete_file",
+    "fork_repository",
+    "deleteJiraIssue",
+    "updateJiraIssue",
+    "addAttachmentToJiraIssue",
+]
 
 
 class StubMCPServer:
@@ -105,6 +176,23 @@ def mock_mcp_servers() -> dict[str, StubMCPServer]:
     return {
         "dbt-eda": StubMCPServer("dbt-eda", EDA_TOOLS),
         "dbt-build": StubMCPServer("dbt-build", BUILD_TOOLS),
+    }
+
+
+@pytest.fixture
+def borrowed_connectors() -> dict[str, StubMCPServer]:
+    """Borrowed host-connector stub servers (BIND-02).
+
+    Two canned surfaces the binding probe lists tools against: a GitHub connector
+    exposing ``merge_pull_request`` and an Atlassian connector exposing
+    ``editJiraIssue``/``addCommentToJiraIssue``. Reuses :class:`StubMCPServer`
+    verbatim (no new stub type) — opens no socket (``--disable-socket`` backstop).
+    The validate-binding test drives these through the probe to prove the
+    destructive borrowed tools WARN and never land in the EDA grant set.
+    """
+    return {
+        "github": StubMCPServer("github", GITHUB_BORROWED_TOOLS),
+        "atlassian": StubMCPServer("atlassian", ATLASSIAN_BORROWED_TOOLS),
     }
 
 
@@ -148,6 +236,44 @@ def mock_github_api(monkeypatch: pytest.MonkeyPatch) -> MockGitHubAPI:
     # change.
     _ = monkeypatch
     return api
+
+
+# --------------------------------------------------------------------------- #
+# Mock ticketing-write tool (JIRA-01 — spec-level write-back, D-10/D-11)
+# --------------------------------------------------------------------------- #
+
+
+class MockTicketingWrite:
+    """Fake ticketing-write tool the deterministic write-back glue calls.
+
+    Mirrors :class:`MockGitHubAPI`'s records-write shape: every ``post`` body is
+    appended to ``self.calls`` so the write-back-guard test can assert that NO
+    warehouse-derived key (``row_count``, ``distinct_*``, ``distributions``,
+    ``sample_values``) ever leaks into a recorded body (D-11). Opens no socket.
+    This is the seam ``tests.harness.writeback.write_spec_back`` writes through —
+    a tool the EDA fork never holds (Rule of Two, D-10).
+    """
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    def post(self, *, ticket_id: str, body: Any) -> dict[str, Any]:
+        record = {"ticket_id": ticket_id, "body": body}
+        self.calls.append(record)
+        return record
+
+
+@pytest.fixture
+def mock_ticketing_write(monkeypatch: pytest.MonkeyPatch) -> MockTicketingWrite:
+    """A fake ticketing-write tool for the write-back-guard test (no real host).
+
+    Keep ``monkeypatch`` in the signature (same as ``mock_github_api``) so a later
+    plan can repoint a real ticketing-write client at this fake without a
+    signature change.
+    """
+    writer = MockTicketingWrite()
+    _ = monkeypatch
+    return writer
 
 
 # --------------------------------------------------------------------------- #
