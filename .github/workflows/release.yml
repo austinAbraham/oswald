@@ -1,15 +1,19 @@
 name: Release
 
-# Publishes @oswald-ai/oswald-core to npm when a vX.Y.Z tag is pushed.
+# Publish @oswald-ai/oswald-core to npm — either by clicking "Run workflow"
+# (Actions tab) or by pushing a vX.Y.Z tag. It publishes the version currently
+# in package.json, with Sigstore provenance, and opens a GitHub Release.
+# Bump the version first; if that version is already on npm the run no-ops
+# (so re-runs and duplicate tags never fail confusingly).
 on:
+  workflow_dispatch:
   push:
     tags:
       - "v*"
 
-# id-token: write is required for npm provenance / trusted publishing.
 permissions:
-  contents: read
-  id-token: write
+  contents: write # create the GitHub Release
+  id-token: write # npm provenance (Sigstore)
 
 jobs:
   publish:
@@ -41,7 +45,28 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Publish
+      - name: Resolve version
+        id: ver
+        run: |
+          V="$(node -p "require('./package.json').version")"
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          if npm view "@oswald-ai/oswald-core@$V" version >/dev/null 2>&1; then
+            echo "already=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::@oswald-ai/oswald-core@$V is already on npm — skipping publish. Bump the version to cut a new release."
+          else
+            echo "already=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish to npm (with provenance)
+        if: steps.ver.outputs.already == 'false'
         run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create GitHub Release
+        if: steps.ver.outputs.already == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v${{ steps.ver.outputs.version }}"
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "$TAG" --generate-notes
