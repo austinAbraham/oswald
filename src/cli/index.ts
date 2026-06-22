@@ -1,9 +1,16 @@
 #!/usr/bin/env node
 import { fileURLToPath } from "node:url";
 import { realpathSync } from "node:fs";
+import { createRequire } from "node:module";
 import { Command } from "commander";
 import { registerCommands } from "./commands/index.js";
 import { logger } from "../core/logging/index.js";
+
+// Single source of truth: report the installed package's version so `--version`
+// can never drift from package.json.
+const { version } = createRequire(import.meta.url)("../../package.json") as {
+  version: string;
+};
 
 export function buildProgram(): Command {
   const program = new Command();
@@ -12,7 +19,7 @@ export function buildProgram(): Command {
     .description(
       "Oswald the Analytical Octopus — a runtime-agnostic, MCP-native workflow layer for analytical-engineering AI agents.",
     )
-    .version("0.1.0");
+    .version(version);
 
   registerCommands(program);
   return program;
