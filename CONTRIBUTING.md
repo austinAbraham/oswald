@@ -6,7 +6,7 @@ agents. This guide covers local setup, how the codebase is organized, how to
 extend it, and the safety rules every contribution must uphold.
 
 By contributing you agree your contributions are licensed under the project's
-[Apache-2.0](./LICENSE) license.
+[MIT](./LICENSE) license.
 
 ## Development Setup
 

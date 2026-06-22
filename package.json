@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Oswald the Analytical Octopus — a runtime-agnostic, MCP-native, context-rot-resistant workflow layer for analytical-engineering AI agents.",
   "type": "module",
-  "license": "Apache-2.0",
+  "license": "MIT",
   "author": "Austin Abraham",
   "homepage": "https://github.com/austinAbraham/oswald#readme",
   "repository": {

@@ -8,35 +8,30 @@
 > A runtime-agnostic, MCP-native, context-rot-resistant workflow layer for
 > analytical-engineering AI agents.
 
+Oswald turns a business request — *"we need a monthly customer-retention mart"* —
+into a disciplined, auditable pipeline: **intake → clarification → context → EDA →
+design → planning → build → validation → PR → ticket update → ship**. Every step
+writes durable artifacts to disk, the LLM stays a thin orchestrator, and **no side
+effect happens without explicit human approval**.
+
+It does **not** call a model itself. Each step (a *tentacle*) does deterministic
+work — parsing tickets, generating read-only SQL, classifying acceptance criteria,
+scaffolding dbt files — and emits structured Markdown/YAML evidence plus the
+next-step prompt. The agent runtime you already use (Claude Code, Codex, Gemini
+CLI, or a plain shell) supplies the reasoning; Oswald supplies the workflow, the
+conventions, the safety gates, and the memory.
+
 ## Install
 
 Requires **Node.js >= 22**.
 
 ```bash
-npm i -g @oswald-ai/oswald-core   # global CLI
-oswald --help
-
+npm i -g @oswald-ai/oswald-core   # global CLI → oswald --help
 npx @oswald-ai/oswald-core --help # one-off, no install
-
-npm i @oswald-ai/oswald-core      # as a library
+npm i @oswald-ai/oswald-core      # as a typed library
 ```
 
-> The legacy Python harness lives on the [`legacy-python`](https://github.com/austinAbraham/oswald/tree/legacy-python) branch.
-
-Oswald turns a business request ("we need a monthly customer-retention mart")
-into a disciplined, auditable analytical-engineering pipeline — intake →
-clarification → context → EDA → design → planning → build → validation →
-PR → ticket update → ship — where **every step writes durable artifacts to
-disk**, the LLM stays a thin orchestrator, and **no side effect happens without
-explicit human approval**.
-
-Oswald is a TypeScript/ESM library plus a `oswald` CLI. It does **not** call a
-model itself. Each pipeline step (a *tentacle*) does deterministic work —
-parsing tickets, generating read-only SQL, classifying acceptance criteria,
-scaffolding dbt files — and emits structured Markdown/YAML evidence plus the
-next-step prompt. The agent runtime you already use (Claude Code, Codex,
-Gemini CLI, or a plain CLI) supplies the reasoning; Oswald supplies the
-workflow, the conventions, the safety gates, and the memory.
+Prefer to run from source? See [Quickstart](#quickstart) below.
 
 ---
 
@@ -51,45 +46,37 @@ where a decision made at intake must still hold at validation.
 ### How Oswald resists it
 
 1. **Durable artifacts in `.oswald/`.** Every tentacle writes its findings to
-   versioned files on disk (`intake.md`, `eda_report.md`, `metric_spec.yml`,
-   `validation_report.md`, …). The artifact directory — not the chat
-   transcript — is the source of truth. A fresh agent run reads the files, not
-   the history.
-
-2. **A thin orchestrator.** Tentacles do deterministic work and hand back a
-   compact result + the recommended next command. The model is asked to reason
-   over *small, structured evidence*, never to hold the whole project in its head.
-
-3. **Explicit state, not implicit memory.** `.oswald/state.yml` records the
-   pipeline phase, the recorded blockers, requirement completeness, and the
-   next recommended command. `oswald next` reads it; the workflow survives a
-   context reset or a process restart.
-
-4. **`oswald compact`.** On demand, Oswald summarizes the current artifact set
-   into a single `current_context.md` ("read this first") and archives the noisy
-   intermediates it just summarized — while **deliberately preserving** the
-   decision log and evidence-bearing artifacts. This is context-rot reduction
-   you can run at any point without losing anything load-bearing.
-
-5. **Evidence tagging.** Every business rule, metric, grain, or filter an agent
-   records is tagged `confirmed` / `inferred` / `assumption` / `open_question`,
-   with a source. Unsourced claims can never masquerade as fact, so a later step
-   (or a human) can always tell what is known versus guessed.
+   versioned files (`intake.md`, `eda_report.md`, `metric_spec.yml`,
+   `validation_report.md`, …). The artifact directory — not the chat transcript —
+   is the source of truth. A fresh agent run reads the files, not the history.
+2. **A thin orchestrator.** Tentacles do deterministic work and return a compact
+   result plus the recommended next command. The model reasons over *small,
+   structured evidence*, never the whole project at once.
+3. **Explicit state, not implicit memory.** `.oswald/state.yml` records the phase,
+   blockers, requirement completeness, and the next command. `oswald next` reads
+   it, so the workflow survives a context reset or a process restart.
+4. **`oswald compact`.** On demand, Oswald summarizes the artifact set into a single
+   `current_context.md` ("read this first") and archives the noisy intermediates —
+   while **deliberately preserving** the decision log and evidence. Context-rot
+   reduction you can run any time without losing anything load-bearing.
+5. **Evidence tagging.** Every business rule, metric, grain, or filter is tagged
+   `confirmed` / `inferred` / `assumption` / `open_question`, with a source.
+   Unsourced claims can never masquerade as fact.
 
 ---
 
 ## Why eight tentacles
 
-The pipeline is decomposed into eight self-contained modules ("tentacles"),
-each owning one workflow phase, one CLI verb, and its own I/O schemas + quality
+The pipeline is decomposed into eight self-contained modules ("tentacles"), each
+owning one workflow phase, one CLI verb, and its own I/O schemas + quality
 checklist. They run in a linear order with human gates between side effects.
 
 | # | Tentacle | What it does |
 |---|----------|--------------|
 | 1 | **Requirements Intake** | Turns a raw ticket into a structured brief — requirements, acceptance criteria, sources, targets, stakeholders, ambiguity flags — treating all ticket text as untrusted evidence. |
-| 2 | **Clarification & Scoping** | Triages open questions into blocking vs non-blocking, groups them by stakeholder, surfaces scope risks, proposes explicit assumptions, recommends splitting oversized tickets, and drafts a clarification comment. |
+| 2 | **Clarification & Scoping** | Triages open questions (blocking vs non-blocking), groups them by stakeholder, surfaces scope risks, proposes explicit assumptions, recommends splitting oversized tickets, and drafts a clarification comment. |
 | 3 | **Context Gathering** | Local-first scan of the repo (dbt models, SQL, YAML, docs) plus optional related tickets/docs, so the pipeline does not rebuild what already exists. |
-| 4 | **Warehouse Discovery & EDA** | Generates (and optionally runs) **read-only** SQL to profile sources, infer grain, probe joins, and identify PII — preferring aggregates and never sampling sensitive columns raw. |
+| 4 | **Warehouse Discovery & EDA** | Generates (and optionally runs) **read-only** SQL to profile sources, infer grain, probe joins, and identify PII — preferring aggregates, never sampling sensitive columns raw. |
 | 5 | **Metric & Semantic Design** | Converts business language into precise metric/grain/dimension/filter definitions and a reconciliation approach; never invents business logic. |
 | 6 | **Model Planning & Implementation** | Plans layered staging/intermediate/mart dbt models + tests and emits a `changed_files` manifest of *intended* changes — without touching project files. |
 | 7 | **Validation & Quality** | Classifies acceptance criteria into deterministic checks, (guardedly) runs dbt build/test, reconciles against a legacy report, and refuses to declare "done" while blocking failures remain. |
@@ -102,47 +89,34 @@ checklist. They run in a linear order with human gates between side effects.
 
 ## Quickstart
 
-Requires **Node.js >= 22**.
+From source (Node.js >= 22):
 
 ```bash
-git clone <your-fork-or-this-repo> oswald
+git clone https://github.com/austinAbraham/oswald.git
 cd oswald
 npm install
-npm run build        # compiles TypeScript to dist/
+npm run build              # compiles TypeScript to dist/
 node dist/cli/index.js --help
+npm link                   # optional: puts `oswald` on your PATH
 ```
 
-Optionally link the `oswald` bin onto your PATH:
-
-```bash
-npm link             # then: oswald --help
-```
-
-Throughout the docs, `oswald <command>` and
-`node dist/cli/index.js <command>` are interchangeable.
+Throughout the docs, `oswald <command>` and `node dist/cli/index.js <command>`
+are interchangeable.
 
 ---
 
 ## Offline demo (no network, no warehouse, no LLM)
 
-This walks the **entire** pipeline against the bundled sample retention ticket
-and the built-in mock warehouse. Everything runs locally and deterministically.
-Run it in a throwaway directory:
+Walks the **entire** pipeline against the bundled sample ticket and the built-in
+mock warehouse — fully local and deterministic. Run it in a throwaway directory:
 
 ```bash
-# 0) Work in a scratch dir; point at the repo's sample ticket.
 mkdir /tmp/oswald-demo && cd /tmp/oswald-demo
 cp /path/to/oswald/examples/tickets/sample-retention-ticket.md ./ticket.md
-
 OSWALD="node /path/to/oswald/dist/cli/index.js"
 
-# 1) Initialize Oswald + a generic runtime adapter (no secrets written).
-$OSWALD init --runtime generic --yes
-
-# 2) Intake the ticket from the local file.
-$OSWALD intake --from-file ./ticket.md
-
-# 3..10) Drive the pipeline. Use the ticket id AE-1234 (from the sample ticket).
+$OSWALD init --runtime generic --yes      # init + a generic runtime adapter (no secrets)
+$OSWALD intake --from-file ./ticket.md    # the sample ticket's id is AE-1234
 $OSWALD clarify       AE-1234 --draft-comment
 $OSWALD context       AE-1234 --local-only
 $OSWALD eda           AE-1234 --warehouse mock --dry-run
@@ -152,75 +126,58 @@ $OSWALD build         AE-1234 --dry-run
 $OSWALD validate      AE-1234 --skip-external
 $OSWALD pr            AE-1234 --draft
 $OSWALD update-ticket AE-1234 --draft
-
-# 11) See the recommended next step, then compact the artifact set.
-$OSWALD next
-$OSWALD compact
+$OSWALD next                              # recommended next step
+$OSWALD compact                           # summarize + archive intermediates
 ```
 
-Inspect the results — the whole pipeline's evidence lives on disk:
-
-```bash
-ls .oswald/                 # intake.md, eda_report.md, metric_spec.yml, ...
-cat .oswald/current_context.md
-```
+The whole pipeline's evidence lives on disk — `ls .oswald/` and
+`cat .oswald/current_context.md`.
 
 ### What you'll see (honest expectations)
 
-- **Pipeline commands take a `<ticket>` argument.** `intake --from-file` records
-  the ticket source as `local-file`; the sample ticket's id is `AE-1234`, so the
-  demo passes `AE-1234` to the downstream verbs. (If you intake from a provider
-  with `intake TICKET-42 --provider mock`, the id is persisted and
-  `oswald next --run` can supply it for you.)
-- **`validate --skip-external` lands the workflow in `blocked` (exit code 2).**
-  This is correct and honest: offline, Oswald cannot actually build the dbt
-  project into a sandbox, so the "builds cleanly into the sandbox schema"
-  acceptance criterion is recorded as *not verified* rather than faked. A
-  blocked state is not a crash — all artifacts are still written.
-- **`pr`/`update-ticket --draft` only ever draft.** They write
-  `pr_summary.md` / `jira_update.md` and never post anything (no `--yes`, no
-  provider). They also park in `blocked` here because validation did not pass —
-  again, by design.
-- **`compact`** summarizes the artifacts into `current_context.md` and archives
-  the noisy intermediates into `.oswald/archive/`, preserving the decision log
-  and evidence.
+- **Pipeline commands take a `<ticket>` argument.** `intake --from-file` records the
+  source as `local-file`, so the demo passes `AE-1234` explicitly to downstream
+  verbs. (Intake from a provider — `intake TICKET-42 --provider mock` — persists the
+  id, and `oswald next --run` can supply it for you.)
+- **`validate --skip-external` lands in `blocked` (exit 2) — by design.** Offline,
+  Oswald can't actually build the dbt project, so the "builds cleanly into the
+  sandbox" criterion is recorded as *not verified* rather than faked. `blocked` is
+  not a crash; all artifacts are still written.
+- **`pr` / `update-ticket --draft` only ever draft.** They write `pr_summary.md` /
+  `jira_update.md` and never post anything. They also park in `blocked` here because
+  validation didn't pass.
+- **`compact`** summarizes into `current_context.md` and archives intermediates into
+  `.oswald/archive/`, preserving the decision log and evidence.
 
-To go further: `eda --warehouse mock --execute` runs the generated read-only
-SQL against the built-in mock fixture (a small `analytics.customers` /
-`analytics.orders` schema), and `build AE-1234 --apply --yes` scaffolds
-conservative, clearly-marked example dbt SQL/YAML stubs under `models/` (it
-never overwrites or deletes existing files).
+To go further offline: `eda AE-1234 --warehouse mock --execute` runs the generated
+read-only SQL against the mock fixture, and `build AE-1234 --apply --yes` scaffolds
+conservative, clearly-marked example dbt files under `models/` (never overwriting).
 
-### Real dbt-backed validate (non-blocked, requires dbt + dbt-duckdb)
+### Real dbt-backed validate (non-blocked, requires `dbt`)
 
-The offline demo above ends in `blocked` *because* it stays local. When an actual
-dbt project and a working `dbt` are present, `validate --dbt` runs a **real**
-`dbt build` + `dbt test` and can reach a **non-blocked** verdict. The repo ships
-a runnable example project at `examples/dbt-project` (duckdb, no warehouse
-account needed):
+The offline demo ends in `blocked` *because* it stays local. With an actual dbt
+project and a working `dbt`, `validate --dbt` runs a **real** `dbt build` + `dbt test`
+and can reach a **non-blocked** verdict. The repo ships a runnable example at
+`examples/dbt-project` (duckdb — no warehouse account needed):
 
 ```bash
 OSW=/path/to/oswald
 EX="$OSW/examples/dbt-project"
 DBT='uvx --python 3.12 --from dbt-core --with dbt-duckdb dbt'   # or your own `dbt`
 
-# Seed the example project's duckdb fixtures once.
-$DBT seed --project-dir "$EX" --profiles-dir "$EX" --target sandbox
-
-# Validate AE-1234 against the real project — runs dbt build + test for real.
+$DBT seed --project-dir "$EX" --profiles-dir "$EX" --target sandbox   # once
 node "$OSW/dist/cli/index.js" validate AE-1234 \
   --dbt --dbt-project-dir "$EX" --dbt-target sandbox --dbt-command "$DBT"
 # → validate: PASS — N passed, 0 failed   (exit 0, NON-blocked)
 ```
 
-This path is covered by a guarded integration test
+This is covered by a guarded integration test
 (`tests/integration/dbt-duckdb.test.ts`, opt in with `OSWALD_RUN_DBT_IT=1`) that
-seeds, builds, tests, and asserts the validate tentacle reaches `ready_for_pr`.
-It skips cleanly when no usable `dbt` is found, so `npm test` stays green offline.
+skips cleanly when no usable `dbt` is found, so `npm test` stays green offline.
 
 ---
 
-## Full command list
+## Command reference
 
 | Command | Purpose |
 |---------|---------|
@@ -249,123 +206,113 @@ Every command accepts `-C, --cwd <dir>` to set the project root.
 Oswald's posture is **default-deny for every side effect**, built in rather than
 bolted on.
 
-- **A write only proceeds when BOTH** an explicit consent flag is supplied
-  (`--yes` / `--post` / `--open` / `--apply`) **AND** the configured policy
-  permits the action. Absent either, the command degrades to draft/dry-run.
-  `--draft` always wins (forces draft-only even if a consent flag is present).
-  This is enforced by a single `ApprovalService` (`core/approvals`).
+- **A write proceeds only when BOTH** an explicit consent flag is supplied
+  (`--yes` / `--post` / `--open` / `--apply`) **AND** the configured policy permits
+  it. Absent either, the command degrades to draft/dry-run; `--draft` always forces
+  draft-only. Enforced by a single `ApprovalService` (`core/approvals`).
 - **Read-only warehouse access.** Every EDA query is re-validated through an SQL
   safety gate (`core/policy/sql-safety`) that allows only a read-only leading
   keyword (`SELECT`/`WITH`/`SHOW`/`DESCRIBE`/`EXPLAIN`), rejects multi-statement
-  input, and injects a `LIMIT` cap. Anything else is blocked. The library never
-  spawns a process to run external commands itself.
+  input, and injects a `LIMIT` cap. The library never spawns a process to run
+  external commands itself.
 - **Untrusted-content sanitizer.** All ticket/doc/EDA text is wrapped and
   prompt-injection-scanned before any agent reads it; detected patterns are
   neutralized and flagged, never silently obeyed.
-- **PII redaction.** Sensitive values are masked out of every artifact before it
-  is written, and PII-by-name columns are profiled only by aggregate, never
-  sampled raw.
+- **PII redaction.** Sensitive values are masked out of every artifact before it is
+  written, and PII-by-name columns are profiled by aggregate only, never sampled raw.
 - **Gated action classes:** `ticket_update`, `create_ticket`, `create_branch`,
   `commit`, `push`, `open_pull_request`, `execute_write_sql`,
-  `write_external_document`. Default config gates warehouse writes, PR opens,
-  and ticket updates, and **prohibits** direct push to protected branches. This
-  mirrors the **Rule of Two**: never concentrate read-untrusted-text +
-  touch-warehouse + post-comments in one un-gated step.
+  `write_external_document`. The default config gates warehouse writes, PR opens, and
+  ticket updates, and **prohibits** direct push to protected branches — mirroring the
+  **Rule of Two**: never concentrate read-untrusted-text + touch-warehouse +
+  post-comments in one un-gated step.
 
-See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#policy-engine) for the policy
-engine internals.
+See [`docs/SECURITY_MODEL.md`](docs/SECURITY_MODEL.md) and
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#policy-engine).
 
 ---
 
-## Runtime support matrix
+## Runtime support
 
-Oswald is runtime-agnostic. `oswald init --runtime <id>` generates command
-templates (and, where supported, slash commands, agent definitions, hooks, and
-an MCP setup HOW-TO) under `.oswald/runtime/<id>/`. **No secrets are ever
-written**; credentials are documented as a HOW-TO that points at each runtime's
-own configuration.
+Oswald is runtime-agnostic. `oswald init --runtime <id>` generates command templates
+(and, where supported, slash commands, agent definitions, hooks, and an MCP setup
+HOW-TO) under `.oswald/runtime/<id>/`. **No secrets are ever written** — credentials
+are documented as a HOW-TO pointing at each runtime's own configuration.
 
 | Runtime | Status | What you get |
 |---------|--------|--------------|
-| `generic` | **Supported** | A command-prompt `.md` per command + README index. The always-available fallback; works in any shell. |
-| `claude-code` | **Supported** | Slash-command markdown, an agent definition, a hooks scaffold, and an `MCP-SETUP.md`. |
+| `generic` | **Supported** | A command-prompt `.md` per command + a README index. The always-available fallback; works in any shell. |
+| `claude-code` | **Supported** | Slash-command markdown, an agent definition, a hooks scaffold, and an `MCP-SETUP.md`. Prompts are **connector-aware** (see below). |
 | `codex` | **Supported** | Command-prompt files + a Codex MCP setup doc. |
 | `gemini-cli` | **Supported** | Command-prompt files + a Gemini CLI MCP setup doc. |
-| `cursor` | **Scaffolded** | Detection + command docs + a README that is honest support is scaffolded; you configure MCP yourself. |
+| `cursor` | **Scaffolded** | Detection + command docs + a README noting that support is scaffolded; you configure MCP yourself. |
 | `windsurf` | **Scaffolded** | Same posture as Cursor. |
 
-Unknown runtime ids fall back to `generic` with a warning. Full detail:
+Unknown runtime ids fall back to `generic` with a warning. Detail:
 [`docs/RUNTIMES.md`](docs/RUNTIMES.md).
 
 ---
 
-## MCP integration overview
+## MCP integration
 
-Oswald speaks to external systems (warehouse, ticketing, repo, docs) through a
-typed **provider** abstraction (`ToolProvider` and the per-domain
-`WarehouseProvider` / `TicketProvider` / `RepoProvider` / `DocumentProvider`
-interfaces). Tentacles only ever see those interfaces, so the backend can change
-without touching pipeline logic, and any provider can be omitted to degrade
-gracefully.
+Oswald reaches external systems (warehouse, ticketing, repo, docs) through a typed
+**provider** abstraction (`ToolProvider` plus the per-domain `WarehouseProvider` /
+`TicketProvider` / `RepoProvider` / `DocumentProvider`). Tentacles only ever see
+those interfaces, so the backend can change without touching pipeline logic, and any
+provider can be omitted to degrade gracefully. Two delivery models:
 
-Two implementations exist today:
+- **Model B — connector-aware prompts (live).** Inside Claude Code, Oswald's
+  generated slash-command prompts instruct the host to use its **already-connected**
+  MCP connectors (`mcp__atlassian__*`, `mcp__github__*`, a warehouse connector) — so
+  Oswald stays MCP-client-free in that runtime, reusing the integrations you already
+  have, with untrusted-content wrapping and approval gates preserved.
+- **Model A — CLI-owned MCP client (backlog).** A client Oswald owns, so
+  terminal / CI / non-Claude-Code users get live providers too. Tracked in
+  [`TODO.md`](./TODO.md) / [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
-- **Mock providers** — fully offline, deterministic, no network. They power the
-  demo above, the test suite, and `oswald doctor`.
-- **MCP provider seam** (`src/tools/mcp/`) — the documented, typed slot for
-  binding Oswald to real MCP servers (e.g. `dbt-mcp`, a Jira MCP). `oswald.yml`
-  already carries an `mcp_servers` block, and `doctor` surfaces the seam.
-
-> **Current status (honest):** the MCP transport is **not yet wired**. The
-> `McpToolProvider` is a clearly-marked stub that reports
-> *"unavailable — no MCP server configured"* and throws on `connect()`, so the
-> rest of the system degrades cleanly. The mock providers are what runs today.
-> See `src/tools/mcp/provider.ts` for the step-by-step wiring plan.
+> **Honest status:** the in-library MCP transport (`src/tools/mcp/`) is a typed but
+> **unwired stub** (`McpToolProvider` reports *"unavailable — no MCP server
+> configured"*). The **mock providers** are what runs today in-library; Model B is
+> live via the Claude Code runtime. See [`docs/MCP.md`](docs/MCP.md).
 
 ---
 
-## Current MVP limitations
+## Current limitations
 
-This is early-stage software. Being honest about what is **not** done yet:
+Early-stage software — being explicit about what is **not** done:
 
-- **No live LLM in the library.** By design — tentacles are deterministic and
-  emit prompts/evidence for the host runtime. There is no built-in agent loop.
-- **Two connectivity models; Model B ships, Model A is backlog.**
-  **Model B (live):** inside Claude Code, Oswald's generated slash-command prompts
-  are *connector-aware* — they instruct Claude to use the **host's already-connected**
-  MCP connectors (`mcp__atlassian__*`, `mcp__github__*`, a warehouse connector),
-  so Oswald stays MCP-client-free in that runtime.
-  **Model A (backlog, [TODO.md](./TODO.md) / [docs/ROADMAP.md](./docs/ROADMAP.md)):**
-  a CLI-owned MCP client so terminal / CI / non-Claude-Code users get the same
-  pipeline without a host's connectors. Until then, the mock providers are the
-  only working in-library backend for those runtimes.
-- **`validate --skip-external` (the default) is fully local** and records the
-  sandbox-build criterion as *not verified*. Passing `--dbt` opts into REAL
-  execution: when a dbt project and a working `dbt` (e.g. `dbt-duckdb`) are
-  present, `validate` runs an actual `dbt build` + `dbt test` against a sandbox
-  target and can reach a **non-blocked** verdict (see the dbt-backed walkthrough
-  above). Without `--dbt` it never spawns a process.
-- **`build --apply` writes conservative *scaffolds*, not production SQL.**
-  Generated `.sql`/`.yml` are clearly-marked stubs with `TODO(human)` markers
-  (`source('TODO_source', …)` / `ref('TODO_upstream')`); Oswald never fabricates
-  provenance, so the post-apply `dbt parse` is expected to fail on those
-  placeholders until a human fills them in — `build --apply` runs parse precisely
-  to surface them, warns, and leaves the files for review. It never overwrites or
-  deletes files.
-- **`cursor`/`windsurf` adapters are scaffolded**, not full integrations.
-- **Snowflake (and other real warehouses) have no offline driver** in this tier;
-  `--warehouse snowflake` falls back to the mock so the read-only gate is still
-  exercised deterministically.
+- **No live LLM in the library** (by design) — tentacles are deterministic and emit
+  prompts/evidence for the host runtime; there's no built-in agent loop.
+- **In-library live providers are backlog (Model A).** Live connectors work today
+  only via the Claude Code runtime (Model B); elsewhere the mock providers are the
+  only in-library backend.
+- **`build --apply` writes *scaffolds*, not production SQL.** Generated `.sql`/`.yml`
+  are clearly-marked `TODO(human)` stubs; Oswald never fabricates provenance, so the
+  post-apply `dbt parse` is *expected* to fail on the placeholders until a human fills
+  them in. It never overwrites or deletes files.
+- **`cursor` / `windsurf` adapters are scaffolded**, not full integrations.
+- **No offline driver for real warehouses** in this tier; `--warehouse snowflake`
+  falls back to the mock so the read-only gate is still exercised deterministically.
 - **No durable orchestration / queue yet** (no DBOS/Temporal); the workflow is
-  state-file-driven and resumable, but there is no background reconciler.
+  state-file-driven and resumable, but there's no background reconciler.
 
 ---
+
+## Contributing
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for dev setup, how to add a
+tentacle / adapter / provider, and the safety rules contributors must keep.
+Releases: [`docs/RELEASING.md`](docs/RELEASING.md).
 
 ## License & credits
 
-Licensed under **Apache-2.0** (see [`LICENSE`](LICENSE)).
+Licensed under the **MIT License** — see [`LICENSE`](LICENSE).
 
-Architectural inspiration is gratefully acknowledged from the **GSD Core**
-workflow discipline (durable planning artifacts, explicit phase state, thin
-orchestration) and from the **Model Context Protocol** documentation and
-ecosystem (the typed tool/provider seam Oswald is built around).
+Architectural inspiration is gratefully acknowledged from the **GSD Core** workflow
+discipline (durable planning artifacts, explicit phase state, thin orchestration) and
+from the **Model Context Protocol** documentation and ecosystem (the typed
+tool/provider seam Oswald is built around).
+
+The earlier Python/Claude-Code dbt harness that preceded this project is preserved on
+the [`legacy-python`](https://github.com/austinAbraham/oswald/tree/legacy-python)
+branch.
