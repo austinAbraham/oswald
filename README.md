@@ -31,6 +31,14 @@ npx @oswald-ai/oswald-core --help # one-off, no install
 npm i @oswald-ai/oswald-core      # as a typed library
 ```
 
+Verify the install:
+
+```bash
+oswald --version                  # prints the installed version
+npm ls -g @oswald-ai/oswald-core  # confirms the global install
+oswald doctor                     # diagnoses config, providers, and policy
+```
+
 Prefer to run from source? See [Quickstart](#quickstart) below.
 
 ---
@@ -236,7 +244,8 @@ See [`docs/SECURITY_MODEL.md`](docs/SECURITY_MODEL.md) and
 
 Oswald is runtime-agnostic. `oswald init --runtime <id>` generates command templates
 (and, where supported, slash commands, agent definitions, hooks, and an MCP setup
-HOW-TO) under `.oswald/runtime/<id>/`. **No secrets are ever written** — credentials
+HOW-TO) under `.oswald/runtime/<id>/` (or straight into `.claude/` for Claude Code
+with `--install`). **No secrets are ever written** — credentials
 are documented as a HOW-TO pointing at each runtime's own configuration.
 
 | Runtime | Status | What you get |
@@ -291,7 +300,7 @@ those interfaces, so the backend can change without touching pipeline logic, and
 provider can be omitted to degrade gracefully. Two delivery models:
 
 - **Model B — connector-aware prompts (live).** Inside Claude Code, Oswald's
-  generated slash-command prompts instruct the host to use its **already-connected**
+  generated skills (`.claude/skills/oswald-<cmd>/SKILL.md`) instruct the host to use its **already-connected**
   MCP connectors (`mcp__atlassian__*`, `mcp__github__*`, a warehouse connector) — so
   Oswald stays MCP-client-free in that runtime, reusing the integrations you already
   have, with untrusted-content wrapping and approval gates preserved.
