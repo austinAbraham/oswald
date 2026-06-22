@@ -1,0 +1,43 @@
+version: 2
+
+models:
+  - name: stg_crm_customers
+    description: "Customer master from CRM, with internal/test accounts flagged."
+    columns:
+      - name: customer_id
+        description: "Primary key — one row per customer."
+        tests:
+          - unique
+          - not_null
+      - name: acquisition_channel
+        description: "How the customer was acquired."
+        tests:
+          - not_null
+      - name: is_internal_or_test
+        description: "True for employee / QA / sandbox accounts (excluded from the mart)."
+        tests:
+          - not_null
+
+  - name: stg_events_customer_activity
+    description: "Per-customer monthly activity event counts."
+    columns:
+      - name: customer_id
+        description: "Customer the activity belongs to."
+        tests:
+          - not_null
+      - name: activity_month
+        description: "Calendar month (YYYY-MM) of the activity."
+        tests:
+          - not_null
+
+  - name: stg_billing_subscriptions
+    description: "Per-customer monthly billing/subscription signal."
+    columns:
+      - name: customer_id
+        description: "Customer the subscription belongs to."
+        tests:
+          - not_null
+      - name: billing_month
+        description: "Calendar month (YYYY-MM) of the billing record."
+        tests:
+          - not_null

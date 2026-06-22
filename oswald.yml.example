@@ -1,0 +1,63 @@
+# Oswald configuration — copy to oswald.yml and edit.
+# Only `project.name` is strictly required; everything else has sensible defaults.
+
+project:
+  name: my-analytics-project
+  default_ticket_system: jira        # jira | clickup | github | linear | none
+  default_warehouse: snowflake       # snowflake | bigquery | databricks | postgres | duckdb
+  default_repo_provider: github      # github | gitlab | bitbucket | none
+
+runtime:
+  preferred_client: claude-code      # which agent runtime/client this project prefers
+  allow_runtime_adapters: true       # allow Oswald to bind to whatever runtime is present
+
+paths:
+  artifact_dir: .oswald              # where workflow artifacts + state live
+  model_dir: models                  # where dbt models are written
+  test_dir: tests                    # where dbt/data tests are written
+
+standards:
+  modeling_tool: dbt
+  sql_dialect: snowflake
+  require_model_docs: true
+  require_tests_for_new_models: true
+
+# How Oswald drives the dbt CLI for `validate --dbt` (real build + test) and the
+# post-`build --apply` `dbt parse`. All optional: with no `dbt:` block Oswald
+# auto-detects a dbt project and runs `dbt` against the `sandbox` target.
+dbt:
+  # The dbt invocation, whitespace-split into argv (never run through a shell).
+  # For a self-contained, cloud-free local run backed by DuckDB:
+  #   command: "uvx --python 3.12 --from dbt-core --with dbt-duckdb dbt"
+  command: dbt
+  # The target to build/test against — must look like a sandbox for write verbs.
+  target: sandbox
+  # Explicit dbt project dir (else walk up from the project root for dbt_project.yml).
+  # project_dir: ./analytics
+  timeout_ms: 300000
+
+# MCP servers Oswald may use. Keys are logical names; values describe how to reach them.
+mcp_servers:
+  dbt:
+    transport: stdio
+    command: uvx
+    args: ["dbt-mcp"]
+  jira:
+    transport: streamable-http
+    url: http://localhost:9000/mcp
+
+policies:
+  require_approval_for:
+    - warehouse_write
+    - pr_open
+    - ticket_update
+  prohibit:
+    - direct_push_to_protected_branch
+  warehouse:
+    read_only_by_default: true
+    max_sample_rows: 100
+    max_result_rows: 10000
+    prefer_aggregates_over_raw_rows: true
+  privacy:
+    mask_sensitive_values: true
+    pii_allowed_in_artifacts: false

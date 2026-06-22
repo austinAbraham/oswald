@@ -1,0 +1,14 @@
+# Local, cloud-free dbt profile backed by DuckDB.
+#
+# The database is a single file under `target/` so the whole project is
+# self-contained and disposable (`dbt clean` wipes it). The default target is
+# named `sandbox` so it satisfies Oswald's "never write to a non-sandbox
+# target" runner guard out of the box.
+oswald_example:
+  target: sandbox
+  outputs:
+    sandbox:
+      type: duckdb
+      path: "target/oswald_example.duckdb"
+      threads: 1
+      schema: main

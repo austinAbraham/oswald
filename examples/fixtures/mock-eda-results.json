@@ -1,0 +1,40 @@
+{
+  "_comment": "Canned read-only EDA results for the AE-1234 retention sources. Shape matches MockWarehouseFixture.cannedResults: each entry's `match` is a case-insensitive substring tested against the normalized SQL, and `result` is a QueryResult ({columns, rows}). Wire these into a MockWarehouseProvider (alongside snowflake-schema.json) to make `oswald eda --warehouse mock --execute` return deterministic aggregates with zero warehouse access. Values are aggregates only — never raw PII rows.",
+  "cannedResults": [
+    {
+      "match": "from \"raw_crm\".\"customers\"",
+      "result": {
+        "columns": ["row_count"],
+        "rows": [{ "row_count": 250000 }]
+      }
+    },
+    {
+      "match": "from \"raw_events\".\"customer_activity\"",
+      "result": {
+        "columns": ["row_count"],
+        "rows": [{ "row_count": 18500000 }]
+      }
+    },
+    {
+      "match": "from \"raw_billing\".\"subscriptions\"",
+      "result": {
+        "columns": ["row_count"],
+        "rows": [{ "row_count": 410000 }]
+      }
+    },
+    {
+      "match": "count(distinct",
+      "result": {
+        "columns": ["distinct_keys", "total_rows"],
+        "rows": [{ "distinct_keys": 250000, "total_rows": 250000 }]
+      }
+    },
+    {
+      "match": "left join",
+      "result": {
+        "columns": ["left_keys", "matched_keys"],
+        "rows": [{ "left_keys": 250000, "matched_keys": 248750 }]
+      }
+    }
+  ]
+}

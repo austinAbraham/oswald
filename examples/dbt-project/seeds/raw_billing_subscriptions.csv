@@ -1,0 +1,14 @@
+customer_id,billing_month,is_paying
+1,2024-01,true
+2,2024-01,true
+3,2024-01,false
+1,2024-02,true
+2,2024-02,true
+3,2024-02,true
+6,2024-02,true
+7,2024-02,false
+1,2024-03,true
+3,2024-03,true
+6,2024-03,true
+8,2024-03,true
+10,2024-03,false

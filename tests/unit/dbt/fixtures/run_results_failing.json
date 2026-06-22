@@ -1,0 +1,43 @@
+{
+  "metadata": {
+    "dbt_schema_version": "https://schemas.getdbt.com/dbt/run-results/v6.json"
+  },
+  "results": [
+    {
+      "unique_id": "seed.oswald_example.raw_crm_customers",
+      "status": "success",
+      "message": "INSERT 10",
+      "failures": null
+    },
+    {
+      "unique_id": "model.oswald_example.stg_crm_customers",
+      "status": "success",
+      "message": null,
+      "failures": null
+    },
+    {
+      "unique_id": "model.oswald_example.fct_customer_retention",
+      "status": "error",
+      "message": "Binder Error: Referenced column \"montth\" not found",
+      "failures": null
+    },
+    {
+      "unique_id": "test.oswald_example.unique_fct_customer_retention_customer_id.aa11bb22cc",
+      "status": "fail",
+      "message": null,
+      "failures": 3
+    },
+    {
+      "unique_id": "test.oswald_example.not_null_fct_customer_retention_month.dd33ee44ff",
+      "status": "pass",
+      "message": null,
+      "failures": 0
+    },
+    {
+      "unique_id": "test.oswald_example.accepted_values_fct_customer_retention_retention_status__new__churned.ff55aa66bb",
+      "status": "skipped",
+      "message": null,
+      "failures": null
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+export {
+  OswaldConfigSchema,
+  ProjectConfigSchema,
+  RuntimeConfigSchema,
+  PathsConfigSchema,
+  StandardsConfigSchema,
+  DbtConfigSchema,
+  McpServerSchema,
+  PoliciesConfigSchema,
+  WarehousePolicySchema,
+  PrivacyPolicySchema,
+  type OswaldConfig,
+  type ProjectConfig,
+  type RuntimeConfig,
+  type PathsConfig,
+  type StandardsConfig,
+  type DbtConfig,
+  type McpServerConfig,
+  type PoliciesConfig,
+} from "./schema.js";
+export {
+  loadConfig,
+  parseConfig,
+  ConfigError,
+  DEFAULT_CONFIG_FILENAME,
+} from "./load.js";

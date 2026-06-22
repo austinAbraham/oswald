@@ -1,0 +1,172 @@
+{
+  "nodes": {
+    "model.oswald_example.stg_crm_customers": {
+      "name": "stg_crm_customers",
+      "resource_type": "model",
+      "column_name": null,
+      "test_metadata": null
+    },
+    "model.oswald_example.stg_billing_subscriptions": {
+      "name": "stg_billing_subscriptions",
+      "resource_type": "model",
+      "column_name": null,
+      "test_metadata": null
+    },
+    "model.oswald_example.stg_events_customer_activity": {
+      "name": "stg_events_customer_activity",
+      "resource_type": "model",
+      "column_name": null,
+      "test_metadata": null
+    },
+    "model.oswald_example.fct_customer_retention": {
+      "name": "fct_customer_retention",
+      "resource_type": "model",
+      "column_name": null,
+      "test_metadata": null
+    },
+    "test.oswald_example.assert_retention_grain_unique": {
+      "name": "assert_retention_grain_unique",
+      "resource_type": "test",
+      "column_name": null,
+      "test_metadata": null
+    },
+    "seed.oswald_example.raw_billing_subscriptions": {
+      "name": "raw_billing_subscriptions",
+      "resource_type": "seed",
+      "column_name": null,
+      "test_metadata": null
+    },
+    "seed.oswald_example.raw_events_customer_activity": {
+      "name": "raw_events_customer_activity",
+      "resource_type": "seed",
+      "column_name": null,
+      "test_metadata": null
+    },
+    "seed.oswald_example.raw_crm_customers": {
+      "name": "raw_crm_customers",
+      "resource_type": "seed",
+      "column_name": null,
+      "test_metadata": null
+    },
+    "test.oswald_example.unique_stg_crm_customers_customer_id.429853921e": {
+      "name": "unique_stg_crm_customers_customer_id",
+      "resource_type": "test",
+      "column_name": "customer_id",
+      "test_metadata": {
+        "name": "unique"
+      }
+    },
+    "test.oswald_example.not_null_stg_crm_customers_customer_id.87863ea547": {
+      "name": "not_null_stg_crm_customers_customer_id",
+      "resource_type": "test",
+      "column_name": "customer_id",
+      "test_metadata": {
+        "name": "not_null"
+      }
+    },
+    "test.oswald_example.not_null_stg_crm_customers_acquisition_channel.2359f7fab8": {
+      "name": "not_null_stg_crm_customers_acquisition_channel",
+      "resource_type": "test",
+      "column_name": "acquisition_channel",
+      "test_metadata": {
+        "name": "not_null"
+      }
+    },
+    "test.oswald_example.not_null_stg_crm_customers_is_internal_or_test.00302b7387": {
+      "name": "not_null_stg_crm_customers_is_internal_or_test",
+      "resource_type": "test",
+      "column_name": "is_internal_or_test",
+      "test_metadata": {
+        "name": "not_null"
+      }
+    },
+    "test.oswald_example.not_null_stg_events_customer_activity_customer_id.6cf2699bdf": {
+      "name": "not_null_stg_events_customer_activity_customer_id",
+      "resource_type": "test",
+      "column_name": "customer_id",
+      "test_metadata": {
+        "name": "not_null"
+      }
+    },
+    "test.oswald_example.not_null_stg_events_customer_activity_activity_month.edf5a2cafb": {
+      "name": "not_null_stg_events_customer_activity_activity_month",
+      "resource_type": "test",
+      "column_name": "activity_month",
+      "test_metadata": {
+        "name": "not_null"
+      }
+    },
+    "test.oswald_example.not_null_stg_billing_subscriptions_customer_id.7f20549086": {
+      "name": "not_null_stg_billing_subscriptions_customer_id",
+      "resource_type": "test",
+      "column_name": "customer_id",
+      "test_metadata": {
+        "name": "not_null"
+      }
+    },
+    "test.oswald_example.not_null_stg_billing_subscriptions_billing_month.60e0ed7bb1": {
+      "name": "not_null_stg_billing_subscriptions_billing_month",
+      "resource_type": "test",
+      "column_name": "billing_month",
+      "test_metadata": {
+        "name": "not_null"
+      }
+    },
+    "test.oswald_example.not_null_fct_customer_retention_customer_id.a2cbcbf8a0": {
+      "name": "not_null_fct_customer_retention_customer_id",
+      "resource_type": "test",
+      "column_name": "customer_id",
+      "test_metadata": {
+        "name": "not_null"
+      }
+    },
+    "test.oswald_example.relationships_fct_customer_retention_customer_id__customer_id__ref_stg_crm_customers_.2c141d1aff": {
+      "name": "relationships_fct_customer_retention_customer_id__customer_id__ref_stg_crm_customers_",
+      "resource_type": "test",
+      "column_name": "customer_id",
+      "test_metadata": {
+        "name": "relationships"
+      }
+    },
+    "test.oswald_example.not_null_fct_customer_retention_month.cf4e002556": {
+      "name": "not_null_fct_customer_retention_month",
+      "resource_type": "test",
+      "column_name": "month",
+      "test_metadata": {
+        "name": "not_null"
+      }
+    },
+    "test.oswald_example.not_null_fct_customer_retention_acquisition_channel.7818e94b2d": {
+      "name": "not_null_fct_customer_retention_acquisition_channel",
+      "resource_type": "test",
+      "column_name": "acquisition_channel",
+      "test_metadata": {
+        "name": "not_null"
+      }
+    },
+    "test.oswald_example.not_null_fct_customer_retention_retention_status.98e624ea7a": {
+      "name": "not_null_fct_customer_retention_retention_status",
+      "resource_type": "test",
+      "column_name": "retention_status",
+      "test_metadata": {
+        "name": "not_null"
+      }
+    },
+    "test.oswald_example.accepted_values_fct_customer_retention_retention_status__new__retained__reactivated__churned.e0f75ca70d": {
+      "name": "accepted_values_fct_customer_retention_retention_status__new__retained__reactivated__churned",
+      "resource_type": "test",
+      "column_name": "retention_status",
+      "test_metadata": {
+        "name": "accepted_values"
+      }
+    },
+    "test.oswald_example.not_null_fct_customer_retention_is_active.8549fcc048": {
+      "name": "not_null_fct_customer_retention_is_active",
+      "resource_type": "test",
+      "column_name": "is_active",
+      "test_metadata": {
+        "name": "not_null"
+      }
+    }
+  }
+}

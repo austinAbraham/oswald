@@ -1,0 +1,37 @@
+version: 2
+
+models:
+  - name: fct_customer_retention
+    description: >
+      AE-1234 monthly customer-retention mart. Grain: one row per
+      (customer_id, month). Internal and test accounts are excluded. Each row
+      carries the acquisition channel and a retention_status.
+    columns:
+      - name: customer_id
+        description: "Customer this retention row describes."
+        tests:
+          - not_null
+          # Relationship back to the customer master (AE-1234 acceptance).
+          - relationships:
+              arguments:
+                to: ref('stg_crm_customers')
+                field: customer_id
+      - name: month
+        description: "Calendar month (YYYY-MM) the retention status applies to."
+        tests:
+          - not_null
+      - name: acquisition_channel
+        description: "Acquisition channel the customer was attributed to."
+        tests:
+          - not_null
+      - name: retention_status
+        description: "Retention classification for the customer-month."
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["new", "retained", "reactivated", "churned"]
+      - name: is_active
+        description: "Whether the customer was active (events or paying) that month."
+        tests:
+          - not_null

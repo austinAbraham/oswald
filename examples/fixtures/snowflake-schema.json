@@ -1,0 +1,50 @@
+{
+  "_comment": "Example warehouse schema fixture for the AE-1234 retention ticket. Shape matches MockWarehouseFixture (schema name -> TableInfo[]). Load it into a MockWarehouseProvider for fully offline `oswald eda --warehouse mock` runs. No real warehouse, no network. Column names like `email`/`full_name` are intentionally PII-by-name so the EDA tentacle exercises its sensitive-column detection and never samples them raw.",
+  "schemas": {
+    "raw_crm": [
+      {
+        "schema": "raw_crm",
+        "name": "customers",
+        "rowCountEstimate": 250000,
+        "columns": [
+          { "name": "customer_id", "type": "integer", "nullable": false },
+          { "name": "email", "type": "varchar" },
+          { "name": "full_name", "type": "varchar" },
+          { "name": "acquisition_channel", "type": "varchar" },
+          { "name": "is_internal", "type": "boolean" },
+          { "name": "is_test_account", "type": "boolean" },
+          { "name": "signup_date", "type": "date" },
+          { "name": "created_at", "type": "timestamp" }
+        ]
+      }
+    ],
+    "raw_events": [
+      {
+        "schema": "raw_events",
+        "name": "customer_activity",
+        "rowCountEstimate": 18500000,
+        "columns": [
+          { "name": "activity_id", "type": "integer", "nullable": false },
+          { "name": "customer_id", "type": "integer", "nullable": false },
+          { "name": "activity_type", "type": "varchar" },
+          { "name": "occurred_at", "type": "timestamp", "nullable": false }
+        ]
+      }
+    ],
+    "raw_billing": [
+      {
+        "schema": "raw_billing",
+        "name": "subscriptions",
+        "rowCountEstimate": 410000,
+        "columns": [
+          { "name": "subscription_id", "type": "integer", "nullable": false },
+          { "name": "customer_id", "type": "integer", "nullable": false },
+          { "name": "plan", "type": "varchar" },
+          { "name": "status", "type": "varchar" },
+          { "name": "started_at", "type": "timestamp", "nullable": false },
+          { "name": "canceled_at", "type": "timestamp" }
+        ]
+      }
+    ]
+  }
+}

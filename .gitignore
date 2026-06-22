@@ -1,0 +1,15 @@
+node_modules/
+dist/
+coverage/
+*.log
+
+# Note: .oswald/ is intentionally NOT ignored — it holds tracked workflow state/artifacts.
+# But a top-level /.oswald created by running demos against THIS repo is throwaway output.
+/.oswald/
+
+# dbt build outputs from the example project (the .duckdb file + compiled artifacts).
+examples/dbt-project/target/
+examples/dbt-project/dbt_packages/
+examples/dbt-project/logs/
+*.duckdb
+*.duckdb.wal

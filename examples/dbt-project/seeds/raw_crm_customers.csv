@@ -1,0 +1,11 @@
+customer_id,acquisition_channel,account_type,created_month
+1,organic,customer,2024-01
+2,paid_search,customer,2024-01
+3,referral,customer,2024-01
+4,organic,internal,2024-01
+5,paid_search,test,2024-01
+6,referral,customer,2024-02
+7,organic,customer,2024-02
+8,paid_search,customer,2024-02
+9,referral,test,2024-02
+10,organic,customer,2024-03

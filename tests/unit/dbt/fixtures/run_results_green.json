@@ -1,0 +1,145 @@
+{
+  "metadata": {
+    "dbt_schema_version": "https://schemas.getdbt.com/dbt/run-results/v6.json"
+  },
+  "results": [
+    {
+      "unique_id": "seed.oswald_example.raw_billing_subscriptions",
+      "status": "success",
+      "message": "INSERT 13",
+      "failures": null
+    },
+    {
+      "unique_id": "seed.oswald_example.raw_crm_customers",
+      "status": "success",
+      "message": "INSERT 10",
+      "failures": null
+    },
+    {
+      "unique_id": "seed.oswald_example.raw_events_customer_activity",
+      "status": "success",
+      "message": "INSERT 16",
+      "failures": null
+    },
+    {
+      "unique_id": "model.oswald_example.stg_billing_subscriptions",
+      "status": "success",
+      "message": "OK",
+      "failures": null
+    },
+    {
+      "unique_id": "model.oswald_example.stg_crm_customers",
+      "status": "success",
+      "message": "OK",
+      "failures": null
+    },
+    {
+      "unique_id": "model.oswald_example.stg_events_customer_activity",
+      "status": "success",
+      "message": "OK",
+      "failures": null
+    },
+    {
+      "unique_id": "test.oswald_example.not_null_stg_billing_subscriptions_billing_month.60e0ed7bb1",
+      "status": "pass",
+      "message": null,
+      "failures": 0
+    },
+    {
+      "unique_id": "test.oswald_example.not_null_stg_billing_subscriptions_customer_id.7f20549086",
+      "status": "pass",
+      "message": null,
+      "failures": 0
+    },
+    {
+      "unique_id": "test.oswald_example.not_null_stg_crm_customers_acquisition_channel.2359f7fab8",
+      "status": "pass",
+      "message": null,
+      "failures": 0
+    },
+    {
+      "unique_id": "test.oswald_example.not_null_stg_crm_customers_customer_id.87863ea547",
+      "status": "pass",
+      "message": null,
+      "failures": 0
+    },
+    {
+      "unique_id": "test.oswald_example.not_null_stg_crm_customers_is_internal_or_test.00302b7387",
+      "status": "pass",
+      "message": null,
+      "failures": 0
+    },
+    {
+      "unique_id": "test.oswald_example.unique_stg_crm_customers_customer_id.429853921e",
+      "status": "pass",
+      "message": null,
+      "failures": 0
+    },
+    {
+      "unique_id": "test.oswald_example.not_null_stg_events_customer_activity_activity_month.edf5a2cafb",
+      "status": "pass",
+      "message": null,
+      "failures": 0
+    },
+    {
+      "unique_id": "test.oswald_example.not_null_stg_events_customer_activity_customer_id.6cf2699bdf",
+      "status": "pass",
+      "message": null,
+      "failures": 0
+    },
+    {
+      "unique_id": "model.oswald_example.fct_customer_retention",
+      "status": "success",
+      "message": "OK",
+      "failures": null
+    },
+    {
+      "unique_id": "test.oswald_example.accepted_values_fct_customer_retention_retention_status__new__retained__reactivated__churned.e0f75ca70d",
+      "status": "pass",
+      "message": null,
+      "failures": 0
+    },
+    {
+      "unique_id": "test.oswald_example.assert_retention_grain_unique",
+      "status": "pass",
+      "message": null,
+      "failures": 0
+    },
+    {
+      "unique_id": "test.oswald_example.not_null_fct_customer_retention_acquisition_channel.7818e94b2d",
+      "status": "pass",
+      "message": null,
+      "failures": 0
+    },
+    {
+      "unique_id": "test.oswald_example.not_null_fct_customer_retention_customer_id.a2cbcbf8a0",
+      "status": "pass",
+      "message": null,
+      "failures": 0
+    },
+    {
+      "unique_id": "test.oswald_example.not_null_fct_customer_retention_is_active.8549fcc048",
+      "status": "pass",
+      "message": null,
+      "failures": 0
+    },
+    {
+      "unique_id": "test.oswald_example.not_null_fct_customer_retention_month.cf4e002556",
+      "status": "pass",
+      "message": null,
+      "failures": 0
+    },
+    {
+      "unique_id": "test.oswald_example.not_null_fct_customer_retention_retention_status.98e624ea7a",
+      "status": "pass",
+      "message": null,
+      "failures": 0
+    },
+    {
+      "unique_id": "test.oswald_example.relationships_fct_customer_retention_customer_id__customer_id__ref_stg_crm_customers_.2c141d1aff",
+      "status": "pass",
+      "message": null,
+      "failures": 0
+    }
+  ]
+}
