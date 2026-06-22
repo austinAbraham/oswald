@@ -2,8 +2,8 @@
 
 [![npm version](https://img.shields.io/npm/v/@oswald-ai/oswald-core)](https://www.npmjs.com/package/@oswald-ai/oswald-core)
 [![CI](https://github.com/austinAbraham/oswald/actions/workflows/ci.yml/badge.svg)](https://github.com/austinAbraham/oswald/actions/workflows/ci.yml)
-[![license](https://img.shields.io/npm/l/@oswald-ai/oswald-core)](./LICENSE)
-[![node](https://img.shields.io/node/v/@oswald-ai/oswald-core)](https://nodejs.org)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+[![node](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](https://nodejs.org)
 
 > A runtime-agnostic, MCP-native, context-rot-resistant workflow layer for
 > analytical-engineering AI agents.
