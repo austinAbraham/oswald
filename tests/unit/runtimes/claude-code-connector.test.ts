@@ -12,7 +12,7 @@ const OPTS = { root: "/tmp/x", artifactDir: ".oswald", projectName: "demo" };
 function commandFile(name: string): string {
   const files = new ClaudeCodeAdapter().renderCommands(OPTS);
   const f = files.find((x) =>
-    x.path.endsWith(path.join("commands", `oswald-${name}.md`)),
+    x.path.endsWith(path.join("skills", `oswald-${name}`, "SKILL.md")),
   );
   expect(f, `missing command file for ${name}`).toBeDefined();
   return f!.content;
@@ -28,6 +28,12 @@ describe("ClaudeCodeAdapter — connector-aware prompts (Model B)", () => {
   it("renders one slash-command file per Oswald command", () => {
     const files = new ClaudeCodeAdapter().renderCommands(OPTS);
     expect(files).toHaveLength(OSWALD_COMMANDS.length);
+  });
+
+  it("emits skills frontmatter (name + disable-model-invocation)", () => {
+    const content = commandFile("intake");
+    expect(content).toContain("name: oswald-intake");
+    expect(content).toContain("disable-model-invocation: true");
   });
 
   it("maps each external-data command to the correct MCP tool family", () => {

@@ -1,6 +1,6 @@
 {
   "name": "@oswald-ai/oswald-core",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Oswald the Analytical Octopus — a runtime-agnostic, MCP-native, context-rot-resistant workflow layer for analytical-engineering AI agents.",
   "type": "module",
   "license": "MIT",

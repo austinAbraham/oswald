@@ -242,7 +242,7 @@ are documented as a HOW-TO pointing at each runtime's own configuration.
 | Runtime | Status | What you get |
 |---------|--------|--------------|
 | `generic` | **Supported** | A command-prompt `.md` per command + a README index. The always-available fallback; works in any shell. |
-| `claude-code` | **Supported** | Slash-command markdown, an agent definition, a hooks scaffold, and an `MCP-SETUP.md`. Prompts are **connector-aware** (see below). |
+| `claude-code` | **Supported** | Modern Claude Code **skills** (`.claude/skills/oswald-<cmd>/SKILL.md`), an agent definition, a hooks scaffold, and an `MCP-SETUP.md`. Add `--install` to write skills/agents straight into `.claude/`. Prompts are **connector-aware** (see below). |
 | `codex` | **Supported** | Command-prompt files + a Codex MCP setup doc. |
 | `gemini-cli` | **Supported** | Command-prompt files + a Gemini CLI MCP setup doc. |
 | `cursor` | **Scaffolded** | Detection + command docs + a README noting that support is scaffolded; you configure MCP yourself. |
@@ -250,6 +250,35 @@ are documented as a HOW-TO pointing at each runtime's own configuration.
 
 Unknown runtime ids fall back to `generic` with a warning. Detail:
 [`docs/RUNTIMES.md`](docs/RUNTIMES.md).
+
+### Make Oswald's commands available in Claude Code
+
+Run init with `--install` to write Oswald's skills and agent straight into the
+project's `.claude/` directory so the commands actually appear in Claude Code:
+
+```bash
+oswald init --runtime claude-code --install
+```
+
+This creates:
+
+- `.claude/skills/oswald-<command>/SKILL.md` — one skill per Oswald command
+- `.claude/agents/oswald-analyst.md` — the `oswald-analyst` subagent
+
+**Restart (or reload) Claude Code** so the new skills and agent load, then invoke
+them as `/oswald-intake`, `/oswald-context`, and so on.
+
+Without `--install`, the same skills/agent are *staged* under
+`.oswald/runtime/claude-code/` (`skills/oswald-<command>/SKILL.md` and
+`agents/oswald-analyst.md`) — copy them into `.claude/` manually if you prefer:
+
+```bash
+cp -R .oswald/runtime/claude-code/skills .claude/skills
+cp -R .oswald/runtime/claude-code/agents .claude/agents
+```
+
+The reference docs (`hooks/README.md`, `MCP-SETUP.md`) always stay staged under
+`.oswald/runtime/claude-code/` since Claude Code does not auto-load them.
 
 ---
 

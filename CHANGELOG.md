@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-06-22
+
+### Added
+
+- **`oswald init --install` flag** — for the `claude-code` runtime, writes
+  Oswald's skills and the `oswald-analyst` subagent directly into the project's
+  `.claude/` directory (`.claude/skills/oswald-<command>/SKILL.md` and
+  `.claude/agents/oswald-analyst.md`) so the commands actually appear in Claude
+  Code. Restart Claude Code, then invoke them as `/oswald-intake`, etc. Reference
+  docs (`hooks/README.md`, `MCP-SETUP.md`) stay staged under `.oswald/`.
+
+### Changed
+
+- **claude-code adapter now emits modern Claude Code _skills_.** Each command is
+  rendered as a directory with `SKILL.md` (`.claude/skills/oswald-<command>/SKILL.md`)
+  using `name` / `description` / `disable-model-invocation: true` frontmatter
+  (user-invoked only, matching Oswald's default-deny posture), replacing the
+  deprecated `commands/oswald-<command>.md` layout. The connector-aware body,
+  untrusted-evidence rule, and write-approval gates are unchanged.
+- **`--version` is now read from `package.json`** so it can no longer drift from
+  the published version (previously pinned to a literal `0.1.0`).
+
 ## [0.1.1] - 2026-06-22
 
 First published release on npm. (0.1.0 was published then unpublished during
@@ -49,5 +71,7 @@ emit durable artifacts plus the next-step prompt.
   prompts instruct Claude Code to use the host's already-connected MCP
   connectors, keeping Oswald MCP-client-free in that runtime.
 
-[Unreleased]: https://github.com/austinAbraham/oswald/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/austinAbraham/oswald/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/austinAbraham/oswald/compare/v0.1.1...v0.1.2
+[0.1.1]: https://github.com/austinAbraham/oswald/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/austinAbraham/oswald/releases/tag/v0.1.0

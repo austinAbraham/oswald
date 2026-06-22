@@ -37,6 +37,12 @@ export interface AdapterInstallOptions {
   force?: boolean;
   /** Project name, used in generated headers. */
   projectName?: string;
+  /**
+   * When true, adapters that have a conventional runtime config location write
+   * directly there (e.g. Claude Code's .claude/) instead of staging under the
+   * artifact dir. Adapters without a conventional location ignore this.
+   */
+  install?: boolean;
 }
 
 /** A single file an adapter would write, as a (relative path, content) pair. */

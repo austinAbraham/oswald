@@ -153,21 +153,37 @@ export class ClaudeCodeAdapter extends BaseAdapter {
     return false;
   }
 
+  /** Base dir for skills: `.claude/skills` when installing, else staged. */
+  private skillsBase(options: AdapterInstallOptions): string {
+    return options.install
+      ? path.join(".claude", "skills")
+      : path.join(runtimeDir(options.artifactDir, this.id), "skills");
+  }
+
+  /** Base dir for agents: `.claude/agents` when installing, else staged. */
+  private agentsBase(options: AdapterInstallOptions): string {
+    return options.install
+      ? path.join(".claude", "agents")
+      : path.join(runtimeDir(options.artifactDir, this.id), "agents");
+  }
+
   renderCommands(options: AdapterInstallOptions): RenderedFile[] {
-    const base = runtimeDir(options.artifactDir, this.id);
-    const cmdDir = path.join(base, "commands");
+    const skillsBase = this.skillsBase(options);
     return OSWALD_COMMANDS.map((cmd) => ({
-      path: path.join(cmdDir, `oswald-${cmd.name}.md`),
+      path: path.join(skillsBase, `oswald-${cmd.name}`, "SKILL.md"),
       content: this.renderSlashCommand(cmd),
     }));
   }
 
   private renderSlashCommand(cmd: CommandSpec): string {
     const connector = CONNECTOR_MAP[cmd.name];
-    // YAML frontmatter is how Claude Code surfaces custom slash commands.
+    // Modern Claude Code skills: a directory per command with SKILL.md.
+    // `disable-model-invocation` keeps it user-invoked only (default-deny posture).
     const lines: string[] = [
       "---",
+      `name: oswald-${cmd.name}`,
       `description: ${cmd.summary}`,
+      "disable-model-invocation: true",
       "---",
       "",
       `# /oswald-${cmd.name}`,
@@ -255,10 +271,10 @@ export class ClaudeCodeAdapter extends BaseAdapter {
   }
 
   override renderAgents(options: AdapterInstallOptions): RenderedFile[] {
-    const base = runtimeDir(options.artifactDir, this.id);
+    const agentsBase = this.agentsBase(options);
     return [
       {
-        path: path.join(base, "agents", "oswald-analyst.md"),
+        path: path.join(agentsBase, "oswald-analyst.md"),
         content: [
           "---",
           "name: oswald-analyst",
@@ -331,20 +347,25 @@ export class ClaudeCodeAdapter extends BaseAdapter {
           "",
           "## Steps",
           "",
-          "1. Decide which MCP servers you need (e.g. a dbt/warehouse MCP server, an",
+          "1. Install Oswald's skills/agent into Claude Code with",
+          "   `oswald init --runtime claude-code --install`. This writes a skill per",
+          "   command to `.claude/skills/oswald-<command>/SKILL.md` and the",
+          "   `oswald-analyst` subagent to `.claude/agents/`. Restart Claude Code so",
+          "   the new skills and agent load, then invoke them as `/oswald-intake`, etc.",
+          "2. Decide which MCP servers you need (e.g. a dbt/warehouse MCP server, an",
           "   Atlassian connector for Jira/Confluence, a GitHub connector for repos).",
-          `2. Add them to Claude Code following the official docs: ${MCP_DOCS_URL}`,
-          "3. Provide credentials via the runtime's secret mechanism / environment —",
+          `3. Add them to Claude Code following the official docs: ${MCP_DOCS_URL}`,
+          "4. Provide credentials via the runtime's secret mechanism / environment —",
           "   NOT in any file Oswald generates.",
-          "4. Verify with `oswald doctor`, then start with `/oswald-intake`.",
+          "5. Verify with `oswald doctor`, then start with `/oswald-intake`.",
           "",
           "## Connector-aware mode (Model B)",
           "",
           "**If you have already connected Atlassian and/or GitHub (and a warehouse)",
           "MCP server in Claude Code, Oswald's commands use them automatically.** The",
-          "generated slash commands instruct Claude to reach for the host's own MCP",
-          "tools rather than Oswald running its own MCP client. This is the default and",
-          "only mode Oswald ships today.",
+          "generated skills (`.claude/skills/oswald-<command>/SKILL.md`) instruct Claude",
+          "to reach for the host's own MCP tools rather than Oswald running its own MCP",
+          "client. This is the default and only mode Oswald ships today.",
           "",
           "What each command reaches for:",
           "",

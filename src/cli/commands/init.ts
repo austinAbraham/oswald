@@ -36,6 +36,7 @@ interface InitOptions {
   force?: boolean;
   yes?: boolean;
   artifactDir?: string;
+  install?: boolean;
 }
 
 export function registerInit(program: Command): void {
@@ -51,6 +52,10 @@ export function registerInit(program: Command): void {
     .option("-f, --force", "overwrite existing files (state + runtime templates)")
     .option("-y, --yes", "assume yes for non-destructive prompts")
     .option("--artifact-dir <dir>", "artifact dir (overrides config)")
+    .option(
+      "--install",
+      "install Claude Code skills/agents directly into .claude/ (claude-code runtime)",
+    )
     .action(async (opts: InitOptions) => {
       const root = path.resolve(opts.cwd);
       const { config } = await loadOrDefaultConfig(root);
@@ -94,6 +99,7 @@ export function registerInit(program: Command): void {
         root,
         artifactDir,
         ...(opts.force ? { force: true } : {}),
+        ...(opts.install ? { install: true } : {}),
         projectName,
       };
       const result = await adapter.install(installOpts);
@@ -102,6 +108,18 @@ export function registerInit(program: Command): void {
       );
       if (result.skipped.length > 0 && !opts.force) {
         logger.info("  (some runtime files existed; re-run with --force to overwrite)");
+      }
+
+      if (adapter.id === "claude-code") {
+        if (opts.install) {
+          logger.info("  installed: .claude/skills/oswald-*/SKILL.md");
+          logger.info("             .claude/agents/oswald-analyst.md");
+          logger.info("  action:    restart Claude Code, then use /oswald-intake");
+        } else {
+          logger.info(
+            "  tip:  re-run with --install to drop skills into .claude/ automatically",
+          );
+        }
       }
 
       if (!config) {
