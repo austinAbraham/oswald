@@ -7,7 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.1.0] - 2026-06-22
+## [0.1.1] - 2026-06-22
+
+First published release on npm. (0.1.0 was published then unpublished during
+setup; per npm policy that version is permanently retired, so the initial
+public release is 0.1.1. No functional difference from 0.1.0.)
 
 Initial public MVP of Oswald the Analytical Octopus — a runtime-agnostic,
 MCP-native, context-rot-resistant workflow layer for analytical-engineering AI

@@ -13,3 +13,4 @@ examples/dbt-project/dbt_packages/
 examples/dbt-project/logs/
 *.duckdb
 *.duckdb.wal
+.npmrc
