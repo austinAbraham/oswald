@@ -1,7 +1,27 @@
 # Oswald the Analytical Octopus
 
+[![npm version](https://img.shields.io/npm/v/@oswald-ai/oswald-core)](https://www.npmjs.com/package/@oswald-ai/oswald-core)
+[![CI](https://github.com/austinAbraham/oswald/actions/workflows/ci.yml/badge.svg)](https://github.com/austinAbraham/oswald/actions/workflows/ci.yml)
+[![license](https://img.shields.io/npm/l/@oswald-ai/oswald-core)](./LICENSE)
+[![node](https://img.shields.io/node/v/@oswald-ai/oswald-core)](https://nodejs.org)
+
 > A runtime-agnostic, MCP-native, context-rot-resistant workflow layer for
 > analytical-engineering AI agents.
+
+## Install
+
+Requires **Node.js >= 22**.
+
+```bash
+npm i -g @oswald-ai/oswald-core   # global CLI
+oswald --help
+
+npx @oswald-ai/oswald-core --help # one-off, no install
+
+npm i @oswald-ai/oswald-core      # as a library
+```
+
+> The legacy Python harness lives on the [`legacy-python`](https://github.com/austinAbraham/oswald/tree/legacy-python) branch.
 
 Oswald turns a business request ("we need a monthly customer-retention mart")
 into a disciplined, auditable analytical-engineering pipeline — intake →

@@ -124,3 +124,9 @@ merged. See [SECURITY.md](./SECURITY.md) for the full posture.
 - Keep PRs focused; include tests for new behavior.
 - Ensure `lint`, `typecheck`, `test`, and `build` all pass.
 - Describe the change and call out any safety-relevant impact explicitly.
+
+## Releasing
+
+Maintainers: see [`docs/RELEASING.md`](./docs/RELEASING.md) for the full release
+process — version bump, `CHANGELOG.md` update, `vX.Y.Z` tag, and the tag-driven
+publish workflow (plus the manual `npm publish` fallback and one-time setup).

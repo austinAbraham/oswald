@@ -3,24 +3,63 @@
   "version": "0.1.0",
   "description": "Oswald the Analytical Octopus — a runtime-agnostic, MCP-native, context-rot-resistant workflow layer for analytical-engineering AI agents.",
   "type": "module",
-  "private": true,
   "license": "Apache-2.0",
+  "author": "Austin Abraham",
+  "homepage": "https://github.com/austinAbraham/oswald#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/austinAbraham/oswald.git"
+  },
+  "bugs": {
+    "url": "https://github.com/austinAbraham/oswald/issues"
+  },
+  "keywords": [
+    "analytical-engineering",
+    "dbt",
+    "mcp",
+    "ai-agents",
+    "data-engineering",
+    "cli",
+    "workflow",
+    "typescript"
+  ],
   "engines": {
-    "node": ">=22"
+    "node": ">=22.0.0",
+    "npm": ">=10.0.0"
   },
   "bin": {
     "oswald": "dist/cli/index.js"
   },
   "main": "dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "sideEffects": false,
   "files": [
-    "dist"
+    "dist",
+    "!dist/**/*.map",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
   ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "scripts": {
     "build": "tsc",
+    "clean": "rm -rf dist",
     "dev": "tsx src/cli/index.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm run build && npm test"
   },
   "dependencies": {
     "commander": "^12.1.0",
