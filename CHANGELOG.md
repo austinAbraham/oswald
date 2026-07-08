@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-06-23
+
+### Changed
+
+- **claude-code adapter emits plain slash commands instead of skills.** Each
+  command is now rendered as a flat `.claude/commands/oswald-<command>.md` file
+  (with `description` frontmatter) rather than a `.claude/skills/<cmd>/SKILL.md`
+  directory. Skills are only surfaced in Claude Code's `/` menu subject to a
+  description/model-invocation budget, so with many skills installed only some
+  appeared; plain slash commands always appear in `/`. `oswald init --runtime
+  claude-code --install` now writes `.claude/commands/oswald-*.md` (+ the
+  `oswald-analyst` agent). The connector-aware body and safety gates are unchanged.
+
 ## [0.1.2] - 2026-06-22
 
 ### Added
@@ -71,7 +84,8 @@ emit durable artifacts plus the next-step prompt.
   prompts instruct Claude Code to use the host's already-connected MCP
   connectors, keeping Oswald MCP-client-free in that runtime.
 
-[Unreleased]: https://github.com/austinAbraham/oswald/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/austinAbraham/oswald/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/austinAbraham/oswald/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/austinAbraham/oswald/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/austinAbraham/oswald/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/austinAbraham/oswald/releases/tag/v0.1.0

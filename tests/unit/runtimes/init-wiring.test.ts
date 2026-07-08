@@ -56,9 +56,8 @@ describe("oswald init --runtime wiring", () => {
       ".oswald",
       "runtime",
       "claude-code",
-      "skills",
-      "oswald-intake",
-      "SKILL.md",
+      "commands",
+      "oswald-intake.md",
     );
     const mcp = path.join(
       root,
@@ -72,25 +71,19 @@ describe("oswald init --runtime wiring", () => {
     expect(await fs.readFile(mcp, "utf8")).toContain("code.claude.com/docs/en/mcp");
   });
 
-  it("installs claude-code skills + agent into .claude/ with --install", async () => {
+  it("installs claude-code commands + agent into .claude/ with --install", async () => {
     const root = await makeTmpDir();
     await runInit(root, ["--runtime", "claude-code", "--install"]);
 
-    // Skills + agent land directly under .claude/.
-    const skill = path.join(
-      root,
-      ".claude",
-      "skills",
-      "oswald-intake",
-      "SKILL.md",
-    );
+    // Commands + agent land directly under .claude/.
+    const command = path.join(root, ".claude", "commands", "oswald-intake.md");
     const agent = path.join(root, ".claude", "agents", "oswald-analyst.md");
-    await expect(fs.access(skill)).resolves.toBeUndefined();
+    await expect(fs.access(command)).resolves.toBeUndefined();
     await expect(fs.access(agent)).resolves.toBeUndefined();
 
-    // Skills/agents are NOT staged under the artifact dir in install mode.
+    // Commands/agents are NOT staged under the artifact dir in install mode.
     await expect(
-      fs.access(path.join(root, ".oswald", "runtime", "claude-code", "skills")),
+      fs.access(path.join(root, ".oswald", "runtime", "claude-code", "commands")),
     ).rejects.toBeTruthy();
 
     // Reference docs still land under the artifact dir.

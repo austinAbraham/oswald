@@ -112,12 +112,12 @@ export function registerInit(program: Command): void {
 
       if (adapter.id === "claude-code") {
         if (opts.install) {
-          logger.info("  installed: .claude/skills/oswald-*/SKILL.md");
+          logger.info("  installed: .claude/commands/oswald-*.md");
           logger.info("             .claude/agents/oswald-analyst.md");
           logger.info("  action:    restart Claude Code, then use /oswald-intake");
         } else {
           logger.info(
-            "  tip:  re-run with --install to drop skills into .claude/ automatically",
+            "  tip:  re-run with --install to drop commands into .claude/ automatically",
           );
         }
       }

@@ -153,11 +153,11 @@ export class ClaudeCodeAdapter extends BaseAdapter {
     return false;
   }
 
-  /** Base dir for skills: `.claude/skills` when installing, else staged. */
-  private skillsBase(options: AdapterInstallOptions): string {
+  /** Base dir for slash commands: `.claude/commands` when installing, else staged. */
+  private commandsBase(options: AdapterInstallOptions): string {
     return options.install
-      ? path.join(".claude", "skills")
-      : path.join(runtimeDir(options.artifactDir, this.id), "skills");
+      ? path.join(".claude", "commands")
+      : path.join(runtimeDir(options.artifactDir, this.id), "commands");
   }
 
   /** Base dir for agents: `.claude/agents` when installing, else staged. */
@@ -168,22 +168,21 @@ export class ClaudeCodeAdapter extends BaseAdapter {
   }
 
   renderCommands(options: AdapterInstallOptions): RenderedFile[] {
-    const skillsBase = this.skillsBase(options);
+    const commandsBase = this.commandsBase(options);
     return OSWALD_COMMANDS.map((cmd) => ({
-      path: path.join(skillsBase, `oswald-${cmd.name}`, "SKILL.md"),
+      path: path.join(commandsBase, `oswald-${cmd.name}.md`),
       content: this.renderSlashCommand(cmd),
     }));
   }
 
   private renderSlashCommand(cmd: CommandSpec): string {
     const connector = CONNECTOR_MAP[cmd.name];
-    // Modern Claude Code skills: a directory per command with SKILL.md.
-    // `disable-model-invocation` keeps it user-invoked only (default-deny posture).
+    // Claude Code slash commands: one flat markdown file per command
+    // (.claude/commands/oswald-<name>.md → /oswald-<name>). Unlike skills these
+    // always appear in the `/` menu; `description` is shown there.
     const lines: string[] = [
       "---",
-      `name: oswald-${cmd.name}`,
       `description: ${cmd.summary}`,
-      "disable-model-invocation: true",
       "---",
       "",
       `# /oswald-${cmd.name}`,
@@ -347,11 +346,11 @@ export class ClaudeCodeAdapter extends BaseAdapter {
           "",
           "## Steps",
           "",
-          "1. Install Oswald's skills/agent into Claude Code with",
-          "   `oswald init --runtime claude-code --install`. This writes a skill per",
-          "   command to `.claude/skills/oswald-<command>/SKILL.md` and the",
-          "   `oswald-analyst` subagent to `.claude/agents/`. Restart Claude Code so",
-          "   the new skills and agent load, then invoke them as `/oswald-intake`, etc.",
+          "1. Install Oswald's commands/agent into Claude Code with",
+          "   `oswald init --runtime claude-code --install`. This writes a slash",
+          "   command per Oswald command to `.claude/commands/oswald-<command>.md` and",
+          "   the `oswald-analyst` subagent to `.claude/agents/`. Restart Claude Code so",
+          "   the new commands and agent load, then invoke them as `/oswald-intake`, etc.",
           "2. Decide which MCP servers you need (e.g. a dbt/warehouse MCP server, an",
           "   Atlassian connector for Jira/Confluence, a GitHub connector for repos).",
           `3. Add them to Claude Code following the official docs: ${MCP_DOCS_URL}`,
@@ -363,7 +362,7 @@ export class ClaudeCodeAdapter extends BaseAdapter {
           "",
           "**If you have already connected Atlassian and/or GitHub (and a warehouse)",
           "MCP server in Claude Code, Oswald's commands use them automatically.** The",
-          "generated skills (`.claude/skills/oswald-<command>/SKILL.md`) instruct Claude",
+          "generated commands (`.claude/commands/oswald-<command>.md`) instruct Claude",
           "to reach for the host's own MCP tools rather than Oswald running its own MCP",
           "client. This is the default and only mode Oswald ships today.",
           "",
