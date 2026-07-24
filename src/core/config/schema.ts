@@ -62,6 +62,31 @@ export const DbtConfigSchema = z
   .default({});
 
 /**
+ * How Oswald drives the Snowflake CLI (`snow`) for the NON-MCP EDA execution
+ * path. All optional: with zero config the mock warehouse is used. Only a
+ * connection NAME is stored here — NEVER credentials (those live in `snow`'s own
+ * `connections.toml`). The `command` string is whitespace-split into argv (never
+ * run through a shell). The row cap is NOT duplicated here; it is reused from
+ * `policies.warehouse.max_result_rows`.
+ */
+export const WarehouseConfigSchema = z
+  .object({
+    /** The `snow` invocation. Whitespace-split into argv; defaults to "snow". */
+    command: z.string().default("snow"),
+    /**
+     * The `snow` connection NAME to run against (resolved by `snow` from its own
+     * config). A NAME only — never a credential. Optional: when unset the CLI
+     * requires `--connection` for `--execute`, else falls back to the mock.
+     */
+    connection: z.string().optional(),
+    /** Subprocess timeout in milliseconds. */
+    timeout_ms: z.number().int().positive().default(120000),
+    /** CLI dialect. Only "snow" is implemented; "snowsql" is reserved. */
+    dialect: z.enum(["snow", "snowsql"]).default("snow"),
+  })
+  .default({});
+
+/**
  * A single MCP server entry. Kept permissive (passthrough) because different
  * transports need different fields; we validate the discriminating shape only
  * loosely so adapters can read transport-specific keys.
@@ -109,6 +134,7 @@ export const OswaldConfigSchema = z.object({
   paths: PathsConfigSchema,
   standards: StandardsConfigSchema,
   dbt: DbtConfigSchema,
+  warehouse: WarehouseConfigSchema,
   mcp_servers: z.record(McpServerSchema).default({}),
   policies: PoliciesConfigSchema,
 });
@@ -118,6 +144,7 @@ export type RuntimeConfig = z.infer<typeof RuntimeConfigSchema>;
 export type PathsConfig = z.infer<typeof PathsConfigSchema>;
 export type StandardsConfig = z.infer<typeof StandardsConfigSchema>;
 export type DbtConfig = z.infer<typeof DbtConfigSchema>;
+export type WarehouseConfig = z.infer<typeof WarehouseConfigSchema>;
 export type McpServerConfig = z.infer<typeof McpServerSchema>;
 export type PoliciesConfig = z.infer<typeof PoliciesConfigSchema>;
 export type OswaldConfig = z.infer<typeof OswaldConfigSchema>;

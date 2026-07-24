@@ -9,6 +9,7 @@ import {
   MockDocumentProvider,
 } from "../../tools/providers/mock/index.js";
 import type { ToolProvider } from "../../tools/providers/types.js";
+import { detectSnow } from "../../tools/snowflake/index.js";
 
 const STATUS_LABEL: Record<string, string> = {
   ok: "ok  ",
@@ -54,6 +55,15 @@ export function registerDoctor(program: Command): void {
           `${label}  provider ${p.name} (${p.kind}): ${p.health.state} — ${p.health.detail} [${p.capabilityCount} cap]`,
         );
       }
+
+      // Optional runtime probe: is the Snowflake CLI (`snow`) available for the
+      // non-MCP EDA execution path? Purely informational — never a failure.
+      const snow = detectSnow();
+      logger.info(
+        snow.available
+          ? `ok    runtime snow (Snowflake CLI): available${snow.version ? ` — ${snow.version}` : ""}`
+          : "info  runtime snow (Snowflake CLI): not found on PATH (--warehouse snowflake falls back to the mock)",
+      );
 
       if (report.policyMode) {
         logger.info(

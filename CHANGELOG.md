@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-07-11
+
+### Added
+
+- **Snowflake CLI EDA execution path (non-MCP).** `oswald eda --warehouse
+  snowflake --execute` now runs Oswald's generated read-only EDA SQL against a
+  real Snowflake account by shelling out to the `snow` CLI — mirroring the dbt
+  runner's disciplined argv-only spawn (no `shell:true`, single `-q` argv
+  element, `SIGKILL` timeout, captured stdout/stderr). New `src/tools/snowflake/`
+  provides a `SnowflakeWarehouseProvider` (a structural clone of the mock: same
+  read-only-before-spawn gate via `SqlSafetyValidator`, same PII redaction via
+  `SensitiveFieldDetector`), a single `snow`-spawning `runner` that only ever
+  emits the `sql` subcommand, a `detectSnow()` probe, and a `dialect:
+  "snow" | "snowsql"` field (snowsql is a reserved stub). Metadata queries
+  double-quote interpolated identifiers and single-quote string literals;
+  parsed rows are defensively truncated client-side (`truncated=true`) on all
+  paths. Only a connection **NAME** crosses the boundary — credentials live in
+  `snow`'s own config and never touch argv/env/logs/artifacts.
+- **New `eda` flags** — `--connection <name>`, `--warehouse-command <cmd>`, and
+  `--query-timeout <ms>` (falling back to config). `--warehouse snowflake`
+  attempts real execution when the `snow` CLI is detected and a connection is
+  configured, else logs a clear warning and falls back to the deterministic mock;
+  `--execute` requires an explicit connection.
+- **New config** — a `warehouse` section (`command` default `snow`, optional
+  `connection` NAME, `timeout_ms` default `120000`, `dialect` default `snow`).
+  The row cap is reused from `policies.warehouse.max_result_rows` (not
+  duplicated). `oswald doctor` now reports whether the `snow` CLI is available.
+
 ## [0.1.3] - 2026-06-23
 
 ### Changed
@@ -84,7 +112,8 @@ emit durable artifacts plus the next-step prompt.
   prompts instruct Claude Code to use the host's already-connected MCP
   connectors, keeping Oswald MCP-client-free in that runtime.
 
-[Unreleased]: https://github.com/austinAbraham/oswald/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/austinAbraham/oswald/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/austinAbraham/oswald/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/austinAbraham/oswald/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/austinAbraham/oswald/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/austinAbraham/oswald/compare/v0.1.0...v0.1.1

@@ -36,6 +36,20 @@ dbt:
   # project_dir: ./analytics
   timeout_ms: 300000
 
+# How Oswald drives the Snowflake CLI (`snow`) for the non-MCP EDA execution path
+# (`eda --warehouse snowflake --execute`). All optional: with no `warehouse:` block
+# the mock warehouse is used. NOTE: only a connection NAME is stored here — NEVER
+# credentials (those live in `snow`'s own connections.toml). The connection must be
+# non-interactive (key-pair or cached SSO).
+warehouse:
+  # The `snow` invocation, whitespace-split into argv (never run through a shell).
+  command: snow
+  # The `snow` connection NAME to run against (resolved by the CLI). A NAME only.
+  # connection: analytics
+  timeout_ms: 120000
+  # CLI dialect. Only "snow" is implemented; "snowsql" is reserved.
+  dialect: snow
+
 # MCP servers Oswald may use. Keys are logical names; values describe how to reach them.
 mcp_servers:
   dbt:

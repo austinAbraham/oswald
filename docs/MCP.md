@@ -115,6 +115,14 @@ The planned real providers, and the official servers they would bind to:
 > These rows describe *intended* bindings. In the current build they resolve to
 > the mock providers (or `unavailable`) — see [ROADMAP.md](./ROADMAP.md).
 
+> **Non-MCP exception — Snowflake CLI.** Independently of the managed Snowflake
+> *MCP* server above, Oswald ships a **non-MCP** Snowflake warehouse provider that
+> runs read-only EDA by shelling out to the `snow` CLI (`eda --warehouse snowflake
+> --execute`). It needs no MCP client — just the Snowflake CLI installed with a
+> non-interactive named connection. Only a connection **NAME** is used (never
+> credentials). See the README's "Real Snowflake EDA via the `snow` CLI" section
+> and the `warehouse:` block in `oswald.yml.example`.
+
 ---
 
 ## How to configure an MCP server (in principle)

@@ -136,9 +136,16 @@ passes the read-only safety validator; rows are LIMIT-capped.
 | `--dry-run` | generate SQL + plan only; never execute (default) |
 | `--tables <csv>` | restrict EDA to these schemas/tables (comma-separated) |
 | `--max-rows <n>` | cap rows per result (advisory; SQL is LIMIT-capped) |
+| `--connection <name>` | `snow` connection NAME (required for `--execute` with `snowflake`) |
+| `--warehouse-command <cmd>` | warehouse CLI invocation (default `snow`) |
+| `--query-timeout <ms>` | per-query subprocess timeout in ms |
 | `-C, --cwd <dir>` | project root |
 
-**Writes:** `eda.md`. (In this tier `snowflake` falls back to the mock provider.)
+**Writes:** `eda.md`. `--warehouse snowflake --execute` runs live read-only EDA via
+the `snow` CLI (only a connection **NAME** crosses the boundary — never credentials);
+it requires an explicit `--connection` (or `warehouse.connection` in `oswald.yml`).
+When `snow` is absent or no connection is configured it falls back to the mock
+provider. See the README's "Real Snowflake EDA via the `snow` CLI" section.
 
 ### `oswald design <ticket>`
 Convert business language into precise metric/semantic definitions.

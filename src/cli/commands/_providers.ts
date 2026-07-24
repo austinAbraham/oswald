@@ -20,7 +20,28 @@ import {
   MockRepoProvider,
   MockDocumentProvider,
 } from "../../tools/providers/mock/index.js";
+import { SnowflakeWarehouseProvider, detectSnow } from "../../tools/snowflake/index.js";
 import type { TentacleProviders } from "../../tentacles/base.js";
+import { logger } from "../../core/logging/index.js";
+
+/**
+ * Settings for the real Snowflake (`snow`) execution path. Threaded from config
+ * (+ CLI flags). Only a connection NAME is carried — never credentials.
+ */
+export interface SnowflakeSettings {
+  /** The `snow` invocation (whitespace-split into argv). Defaults to "snow". */
+  command?: string;
+  /** The `snow` connection NAME. Required for real execution. */
+  connection?: string;
+  /** Subprocess timeout in ms. */
+  timeoutMs?: number;
+  /** CLI dialect. Only "snow" is implemented. */
+  dialect?: "snow" | "snowsql";
+  /** Row cap (from policies.warehouse.max_result_rows). */
+  maxResultRows?: number;
+  /** Whether PII redaction is enabled (from policies.privacy.mask_sensitive_values). */
+  maskSensitive?: boolean;
+}
 
 export interface ProviderSelection {
   /** Project root (used for the repo provider's git cwd). */
@@ -37,6 +58,8 @@ export interface ProviderSelection {
   localOnly?: boolean;
   /** Optional path to a ticket fixture file for the mock ticket provider. */
   ticketFixture?: string | undefined;
+  /** Settings for the real Snowflake path (used when `warehouse === "snowflake"`). */
+  snowflake?: SnowflakeSettings | undefined;
 }
 
 /**
@@ -53,10 +76,10 @@ export function selectProviders(sel: ProviderSelection): TentacleProviders {
       sel.ticketFixture ? { fixturePath: sel.ticketFixture } : {},
     );
   }
-  // Snowflake has no offline driver in this tier; fall back to the mock so the
-  // EDA path still exercises the read-only gate deterministically.
-  if (sel.warehouse === "mock" || sel.warehouse === "snowflake") {
+  if (sel.warehouse === "mock") {
     providers.warehouse = new MockWarehouseProvider();
+  } else if (sel.warehouse === "snowflake") {
+    providers.warehouse = selectSnowflakeWarehouse(sel.snowflake);
   }
   if (sel.repo) {
     providers.repo = new MockRepoProvider({ cwd: sel.cwd });
@@ -65,4 +88,41 @@ export function selectProviders(sel: ProviderSelection): TentacleProviders {
     providers.document = new MockDocumentProvider();
   }
   return providers;
+}
+
+/**
+ * Choose the concrete warehouse provider for `--warehouse snowflake`.
+ *
+ * Constructs the real {@link SnowflakeWarehouseProvider} ONLY when the `snow` CLI
+ * is detected AND a connection NAME is configured. Otherwise it logs a clear
+ * warning and falls back to the deterministic {@link MockWarehouseProvider}, so
+ * the read-only gate is still exercised and nothing spawns.
+ */
+function selectSnowflakeWarehouse(
+  settings: SnowflakeSettings | undefined,
+): SnowflakeWarehouseProvider | MockWarehouseProvider {
+  const connection = settings?.connection?.trim();
+  if (!connection) {
+    logger.warn(
+      "warehouse 'snowflake' requested but no connection name is configured; falling back to the mock warehouse (dry-run-safe). Set warehouse.connection in oswald.yml or pass --connection.",
+    );
+    return new MockWarehouseProvider();
+  }
+  const detection = detectSnow(settings?.command);
+  if (!detection.available) {
+    logger.warn(
+      `warehouse 'snowflake' requested but the '${
+        settings?.command ?? "snow"
+      }' CLI was not found on PATH; falling back to the mock warehouse. Install the Snowflake CLI and configure a non-interactive connection to run real EDA.`,
+    );
+    return new MockWarehouseProvider();
+  }
+  return new SnowflakeWarehouseProvider({
+    connection,
+    ...(settings?.command != null ? { command: settings.command } : {}),
+    ...(settings?.timeoutMs != null ? { timeoutMs: settings.timeoutMs } : {}),
+    ...(settings?.dialect != null ? { dialect: settings.dialect } : {}),
+    ...(settings?.maskSensitive != null ? { maskSensitive: settings.maskSensitive } : {}),
+    sql: settings?.maxResultRows != null ? { maxResultRows: settings.maxResultRows } : {},
+  });
 }

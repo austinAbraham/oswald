@@ -5,6 +5,7 @@ export {
   PathsConfigSchema,
   StandardsConfigSchema,
   DbtConfigSchema,
+  WarehouseConfigSchema,
   McpServerSchema,
   PoliciesConfigSchema,
   WarehousePolicySchema,
@@ -15,6 +16,7 @@ export {
   type PathsConfig,
   type StandardsConfig,
   type DbtConfig,
+  type WarehouseConfig,
   type McpServerConfig,
   type PoliciesConfig,
 } from "./schema.js";

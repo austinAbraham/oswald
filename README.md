@@ -203,6 +203,49 @@ This is covered by a guarded integration test
 (`tests/integration/dbt-duckdb.test.ts`, opt in with `OSWALD_RUN_DBT_IT=1`) that
 skips cleanly when no usable `dbt` is found, so `npm test` stays green offline.
 
+### Real Snowflake EDA via the `snow` CLI (`--warehouse snowflake`)
+
+`eda --warehouse snowflake --execute` runs Oswald's generated **read-only** EDA
+SQL against a real Snowflake account by shelling out to the **Snowflake CLI**
+(`snow`) — the same disciplined argv-only spawn the dbt runner uses (no shell,
+single `-q` argument, SIGKILL timeout). Every statement passes the read-only SQL
+safety gate **before** anything is spawned, results are PII-redacted before they
+leave the provider, and rows are defensively capped.
+
+Honest note: the Snowflake **desktop app / Snowsight are NOT scriptable**. Oswald
+drives the `snow` CLI, which uses the *same* account and connections. So this
+requires the Snowflake CLI installed with a **non-interactive named connection**
+(key-pair auth or cached SSO) — an interactive auth prompt would block (the
+timeout bounds any hang). **Only the connection NAME is ever used; Oswald never
+sees or stores credentials.**
+
+```bash
+# One-time: create + verify a non-interactive connection (Snowflake CLI).
+snow connection add --connection-name analytics   # follow prompts (key-pair/SSO)
+snow connection test --connection analytics        # confirm it authenticates
+
+# Run live read-only EDA (only the connection NAME crosses the boundary):
+node "$OSW/dist/cli/index.js" eda AE-1234 \
+  --warehouse snowflake --connection analytics --execute
+```
+
+Configure defaults in `oswald.yml` instead of flags (a NAME only — never secrets):
+
+```yaml
+warehouse:
+  command: snow          # the CLI invocation (whitespace-split into argv)
+  connection: analytics  # a `snow` connection NAME, resolved by the CLI
+  timeout_ms: 120000
+  dialect: snow          # "snowsql" is reserved (not implemented)
+```
+
+When `snow` is not installed or no connection is configured, `--warehouse
+snowflake` logs a clear warning and falls back to the deterministic mock (so the
+read-only gate is still exercised). A guarded integration test
+(`tests/integration/snowflake-cli.test.ts`) opts in via `OSWALD_RUN_SNOW_IT=1`
+plus `OSWALD_SNOW_CONNECTION=<name>` and skips cleanly otherwise, so `npm test`
+stays green offline. `oswald doctor` reports whether `snow` was detected.
+
 ---
 
 ## Command reference
@@ -350,8 +393,11 @@ Early-stage software — being explicit about what is **not** done:
   post-apply `dbt parse` is *expected* to fail on the placeholders until a human fills
   them in. It never overwrites or deletes files.
 - **`cursor` / `windsurf` adapters are scaffolded**, not full integrations.
-- **No offline driver for real warehouses** in this tier; `--warehouse snowflake`
-  falls back to the mock so the read-only gate is still exercised deterministically.
+- **Real warehouse execution is Snowflake-CLI-only in this tier.** `--warehouse
+  snowflake` runs live read-only EDA via the `snow` CLI (see below); when `snow`
+  is absent or no connection is configured it falls back to the mock so the
+  read-only gate is still exercised deterministically. Other warehouses have no
+  in-library live driver yet.
 - **No durable orchestration / queue yet** (no DBOS/Temporal); the workflow is
   state-file-driven and resumable, but there's no background reconciler.
 
