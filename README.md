@@ -21,17 +21,34 @@ next-step prompt. The agent runtime you already use (Claude Code, Codex, Gemini
 CLI, or a plain shell) supplies the reasoning; Oswald supplies the workflow, the
 conventions, the safety gates, and the memory.
 
-## Install
+## Install & set up
 
-Requires **Node.js >= 22**.
+Requires **Node.js >= 22**. Getting running is two commands — **install the CLI, then
+initialize it inside your project.**
+
+**1. Install the CLI globally**
 
 ```bash
-npm i -g @oswald-ai/oswald-core   # global CLI → oswald --help
-npx @oswald-ai/oswald-core --help # one-off, no install
-npm i @oswald-ai/oswald-core      # as a typed library
+npm i -g @oswald-ai/oswald-core
 ```
 
-Verify the install:
+**2. Initialize Oswald in your project** — run this **inside the repo** you want Oswald
+to work in. It creates the `.oswald/` state + config and the runtime command templates:
+
+```bash
+cd your-project
+oswald init                                  # base setup (generic runtime)
+```
+
+To also wire Oswald's `/oswald-*` slash commands into **Claude Code**, initialize with
+the `claude-code` runtime and `--install` (writes them into `.claude/`, then restart
+Claude Code):
+
+```bash
+oswald init --runtime claude-code --install
+```
+
+**3. Verify it's working**
 
 ```bash
 oswald --version                  # prints the installed version
@@ -39,7 +56,10 @@ npm ls -g @oswald-ai/oswald-core  # confirms the global install
 oswald doctor                     # diagnoses config, providers, and policy
 ```
 
-Prefer to run from source? See [Quickstart](#quickstart) below.
+You're ready — start with `oswald intake` (see [Command reference](#command-reference)).
+
+> **Other ways to run:** `npx @oswald-ai/oswald-core --help` (one-off, no install),
+> `npm i @oswald-ai/oswald-core` (as a typed library), or [from source](#quickstart).
 
 ---
 
