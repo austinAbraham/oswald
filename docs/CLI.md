@@ -205,6 +205,18 @@ Package the change into a PR summary. Opening the PR is gated.
 **Writes:** `pr.md`. Opening (`open_pull_request`) is approval-gated; direct push
 to protected branches is prohibited.
 
+By default the repo provider is the deterministic mock, so `--open --yes` records
+the gated action without touching the real repo. Opt in to the real path with a
+`repo:` block in `oswald.yml` (`repo.provider: git`): `--open --yes` then pushes
+ONLY the feature branch via the `git` CLI and opens the PR with the forge CLI
+selected from the remote URL — `gh` (github.com), `glab` (gitlab), `az repos`
+(dev.azure.com / visualstudio.com). Only CLI invocations and a remote NAME are
+configured — forge auth stays in the forge CLI's own config (`gh auth login`,
+`glab auth login`, `az login`). When `git` or the forge CLI is missing, Oswald
+warns and degrades gracefully (mock fallback / a clear refusal with guidance).
+Pushing a protected branch (`main`/`master`, or the PR base itself) is refused
+structurally, regardless of flags or policy.
+
 ### `oswald update-ticket <ticket>`
 Write results back to the ticket. Posting is gated.
 

@@ -87,6 +87,33 @@ export const WarehouseConfigSchema = z
   .default({});
 
 /**
+ * How Oswald talks to the local git repo (and its forge) for the REAL repo
+ * provider path (`repo.provider: git`). All optional: with zero config the
+ * deterministic mock repo provider is used, so tests and the offline demo stay
+ * hermetic. The `command` / `forge_command` strings are whitespace-split into
+ * argv (never run through a shell). NO secrets are stored here — forge auth
+ * lives in the forge CLI's own config (`gh auth`, `glab auth`, `az login`).
+ */
+export const RepoConfigSchema = z
+  .object({
+    /** Which repo provider to wire: the hermetic mock (default) or real git. */
+    provider: z.enum(["mock", "git"]).default("mock"),
+    /** The git invocation. Whitespace-split into argv; defaults to "git". */
+    command: z.string().default("git"),
+    /**
+     * Override the forge CLI invocation used by openPullRequest. When unset it
+     * is derived from the remote URL: `gh` (github.com), `glab` (gitlab),
+     * `az` (dev.azure.com / visualstudio.com).
+     */
+    forge_command: z.string().optional(),
+    /** The git remote pull requests target. */
+    remote: z.string().default("origin"),
+    /** Subprocess timeout in milliseconds. */
+    timeout_ms: z.number().int().positive().default(60000),
+  })
+  .default({});
+
+/**
  * A single MCP server entry. Kept permissive (passthrough) because different
  * transports need different fields; we validate the discriminating shape only
  * loosely so adapters can read transport-specific keys.
@@ -135,6 +162,7 @@ export const OswaldConfigSchema = z.object({
   standards: StandardsConfigSchema,
   dbt: DbtConfigSchema,
   warehouse: WarehouseConfigSchema,
+  repo: RepoConfigSchema,
   mcp_servers: z.record(McpServerSchema).default({}),
   policies: PoliciesConfigSchema,
 });
@@ -145,6 +173,7 @@ export type PathsConfig = z.infer<typeof PathsConfigSchema>;
 export type StandardsConfig = z.infer<typeof StandardsConfigSchema>;
 export type DbtConfig = z.infer<typeof DbtConfigSchema>;
 export type WarehouseConfig = z.infer<typeof WarehouseConfigSchema>;
+export type RepoConfig = z.infer<typeof RepoConfigSchema>;
 export type McpServerConfig = z.infer<typeof McpServerSchema>;
 export type PoliciesConfig = z.infer<typeof PoliciesConfigSchema>;
 export type OswaldConfig = z.infer<typeof OswaldConfigSchema>;

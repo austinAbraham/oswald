@@ -10,6 +10,7 @@ import {
 } from "../../tools/providers/mock/index.js";
 import type { ToolProvider } from "../../tools/providers/types.js";
 import { detectSnow } from "../../tools/snowflake/index.js";
+import { detectGit } from "../../tools/repo/index.js";
 
 const STATUS_LABEL: Record<string, string> = {
   ok: "ok  ",
@@ -63,6 +64,15 @@ export function registerDoctor(program: Command): void {
         snow.available
           ? `ok    runtime snow (Snowflake CLI): available${snow.version ? ` — ${snow.version}` : ""}`
           : "info  runtime snow (Snowflake CLI): not found on PATH (--warehouse snowflake falls back to the mock)",
+      );
+
+      // Same informational probe for the real repo provider path (`repo.provider:
+      // git`). Purely informational — never a failure.
+      const git = detectGit();
+      logger.info(
+        git.available
+          ? `ok    runtime git: available${git.version ? ` — ${git.version}` : ""}`
+          : "info  runtime git: not found on PATH (repo.provider 'git' falls back to the mock)",
       );
 
       if (report.policyMode) {

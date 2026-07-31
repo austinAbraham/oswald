@@ -10,6 +10,9 @@
  *     (filesystem-only context, draft-only delivery, dry-run EDA).
  *   - a `--provider <name>` of `local`/`mock` → mock providers.
  *   - a `--warehouse none` → no warehouse provider (EDA stays dry-run).
+ *   - the repo provider is the deterministic mock unless the config opts in
+ *     (`repo.provider: git`) AND the git CLI is detected — then the real
+ *     {@link GitRepoProvider} (git + gh/glab/az, all writes approval-gated).
  *
  * MCP-backed providers slot in here unchanged once the MCP seam is wired; the
  * tentacles only ever see the typed provider interfaces.
@@ -21,7 +24,9 @@ import {
   MockDocumentProvider,
 } from "../../tools/providers/mock/index.js";
 import { SnowflakeWarehouseProvider, detectSnow } from "../../tools/snowflake/index.js";
+import { GitRepoProvider, detectGit } from "../../tools/repo/index.js";
 import type { TentacleProviders } from "../../tentacles/base.js";
+import type { OswaldConfig } from "../../core/config/index.js";
 import { logger } from "../../core/logging/index.js";
 
 /**
@@ -43,6 +48,37 @@ export interface SnowflakeSettings {
   maskSensitive?: boolean;
 }
 
+/**
+ * Settings for the real git repo path. Threaded from the config `repo` block.
+ * Only CLI invocations and a remote NAME are carried — never credentials
+ * (forge auth lives in the forge CLI's own config).
+ */
+export interface RepoSettings {
+  /** Which repo provider to wire: the hermetic mock (default) or real git. */
+  provider?: "mock" | "git";
+  /** The git invocation (whitespace-split into argv). Defaults to "git". */
+  command?: string;
+  /** Override the forge CLI invocation (default derived: gh/glab/az). */
+  forgeCommand?: string;
+  /** The git remote pull requests target. Defaults to "origin". */
+  remote?: string;
+  /** Subprocess timeout in ms. */
+  timeoutMs?: number;
+}
+
+/** Build {@link RepoSettings} from the config `repo` block. */
+export function repoSettingsFromConfig(config: OswaldConfig): RepoSettings {
+  return {
+    provider: config.repo.provider,
+    command: config.repo.command,
+    ...(config.repo.forge_command != null
+      ? { forgeCommand: config.repo.forge_command }
+      : {}),
+    remote: config.repo.remote,
+    timeoutMs: config.repo.timeout_ms,
+  };
+}
+
 export interface ProviderSelection {
   /** Project root (used for the repo provider's git cwd). */
   cwd: string;
@@ -60,6 +96,8 @@ export interface ProviderSelection {
   ticketFixture?: string | undefined;
   /** Settings for the real Snowflake path (used when `warehouse === "snowflake"`). */
   snowflake?: SnowflakeSettings | undefined;
+  /** Settings for the real git path (used when `repo` is requested). */
+  repoSettings?: RepoSettings | undefined;
 }
 
 /**
@@ -82,7 +120,7 @@ export function selectProviders(sel: ProviderSelection): TentacleProviders {
     providers.warehouse = selectSnowflakeWarehouse(sel.snowflake);
   }
   if (sel.repo) {
-    providers.repo = new MockRepoProvider({ cwd: sel.cwd });
+    providers.repo = selectRepoProvider(sel.cwd, sel.repoSettings);
   }
   if (sel.document) {
     providers.document = new MockDocumentProvider();
@@ -124,5 +162,39 @@ function selectSnowflakeWarehouse(
     ...(settings?.dialect != null ? { dialect: settings.dialect } : {}),
     ...(settings?.maskSensitive != null ? { maskSensitive: settings.maskSensitive } : {}),
     sql: settings?.maxResultRows != null ? { maxResultRows: settings.maxResultRows } : {},
+  });
+}
+
+/**
+ * Choose the concrete repo provider.
+ *
+ * Constructs the real {@link GitRepoProvider} ONLY when the config opts in
+ * (`repo.provider: git`) AND the git CLI is detected. Otherwise it falls back
+ * to the deterministic {@link MockRepoProvider} (with a clear warning when the
+ * opt-in could not be honored), so tests and the offline demo stay hermetic
+ * and writes remain draft-only.
+ */
+export function selectRepoProvider(
+  cwd: string,
+  settings: RepoSettings | undefined,
+): GitRepoProvider | MockRepoProvider {
+  if (settings?.provider !== "git") {
+    return new MockRepoProvider({ cwd });
+  }
+  const detection = detectGit(settings.command);
+  if (!detection.available) {
+    logger.warn(
+      `repo provider 'git' requested but the '${
+        settings.command ?? "git"
+      }' CLI was not found on PATH; falling back to the mock repo provider (draft-only). Install git to enable real branch/commit/PR operations.`,
+    );
+    return new MockRepoProvider({ cwd });
+  }
+  return new GitRepoProvider({
+    cwd,
+    ...(settings.command != null ? { command: settings.command } : {}),
+    ...(settings.forgeCommand != null ? { forgeCommand: settings.forgeCommand } : {}),
+    ...(settings.remote != null ? { remote: settings.remote } : {}),
+    ...(settings.timeoutMs != null ? { timeoutMs: settings.timeoutMs } : {}),
   });
 }

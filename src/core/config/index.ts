@@ -6,6 +6,7 @@ export {
   StandardsConfigSchema,
   DbtConfigSchema,
   WarehouseConfigSchema,
+  RepoConfigSchema,
   McpServerSchema,
   PoliciesConfigSchema,
   WarehousePolicySchema,
@@ -17,6 +18,7 @@ export {
   type StandardsConfig,
   type DbtConfig,
   type WarehouseConfig,
+  type RepoConfig,
   type McpServerConfig,
   type PoliciesConfig,
 } from "./schema.js";

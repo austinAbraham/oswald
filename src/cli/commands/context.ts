@@ -2,7 +2,8 @@ import * as path from "node:path";
 import { z } from "zod";
 import type { Command } from "commander";
 import { runTentacleCommand } from "./_run.js";
-import { selectProviders } from "./_providers.js";
+import { selectProviders, repoSettingsFromConfig } from "./_providers.js";
+import { resolveConfig } from "./_config.js";
 
 const OptionsSchema = z.object({
   localOnly: z.boolean().optional(),
@@ -29,6 +30,7 @@ export function registerContext(program: Command): void {
     .action(async (ticket: string, raw: unknown) => {
       const opts = OptionsSchema.parse(raw);
       const cwd = path.resolve(opts.cwd);
+      const config = await resolveConfig(cwd);
 
       const localOnly = Boolean(opts.localOnly);
       const providers = selectProviders({
@@ -37,6 +39,7 @@ export function registerContext(program: Command): void {
         repo: !localOnly && Boolean(opts.includePrs),
         ticket: !localOnly && Boolean(opts.includeTickets),
         document: !localOnly && Boolean(opts.includeDocs),
+        repoSettings: repoSettingsFromConfig(config),
       });
 
       const { exitCode } = await runTentacleCommand({

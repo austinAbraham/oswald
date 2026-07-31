@@ -32,6 +32,31 @@ describe("config: parseConfig", () => {
     expect(config.mcp_servers).toEqual({});
   });
 
+  it("defaults the repo block to the hermetic mock provider", () => {
+    const config = parseConfig({ project: { name: "demo" } });
+    expect(config.repo.provider).toBe("mock");
+    expect(config.repo.command).toBe("git");
+    expect(config.repo.remote).toBe("origin");
+    expect(config.repo.forge_command).toBeUndefined();
+    expect(config.repo.timeout_ms).toBe(60000);
+  });
+
+  it("accepts an explicit repo.provider git opt-in", () => {
+    const config = parseConfig({
+      project: { name: "demo" },
+      repo: { provider: "git", forge_command: "gh", remote: "upstream" },
+    });
+    expect(config.repo.provider).toBe("git");
+    expect(config.repo.forge_command).toBe("gh");
+    expect(config.repo.remote).toBe("upstream");
+  });
+
+  it("rejects an unknown repo.provider", () => {
+    expect(() =>
+      parseConfig({ project: { name: "demo" }, repo: { provider: "svn" } }),
+    ).toThrow(ConfigError);
+  });
+
   it("rejects a config missing project.name", () => {
     expect(() => parseConfig({ project: {} })).toThrow(ConfigError);
   });

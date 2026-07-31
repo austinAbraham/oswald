@@ -2,7 +2,8 @@ import * as path from "node:path";
 import { z } from "zod";
 import type { Command } from "commander";
 import { runTentacleCommand } from "./_run.js";
-import { selectProviders } from "./_providers.js";
+import { selectProviders, repoSettingsFromConfig } from "./_providers.js";
+import { resolveConfig } from "./_config.js";
 
 const OptionsSchema = z.object({
   draft: z.boolean().optional(),
@@ -27,9 +28,15 @@ export function registerPr(program: Command): void {
     .action(async (ticket: string, raw: unknown) => {
       const opts = OptionsSchema.parse(raw);
       const cwd = path.resolve(opts.cwd);
+      const config = await resolveConfig(cwd);
 
-      // Opening a PR needs a repo provider; drafting does not.
-      const providers = selectProviders({ cwd, repo: Boolean(opts.open) });
+      // Opening a PR needs a repo provider; drafting does not. The provider is
+      // the hermetic mock unless the config opts into `repo.provider: git`.
+      const providers = selectProviders({
+        cwd,
+        repo: Boolean(opts.open),
+        repoSettings: repoSettingsFromConfig(config),
+      });
 
       const { exitCode } = await runTentacleCommand({
         id: "delivery",
