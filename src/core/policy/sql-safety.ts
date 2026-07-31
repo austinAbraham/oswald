@@ -9,7 +9,13 @@
  *
  * It is intentionally conservative: when in doubt, BLOCK. It is a policy gate,
  * not a SQL parser — it does not attempt to fully understand arbitrary SQL.
+ *
+ * When constructed with an {@link AuditSink}, every verdict is appended to the
+ * persistent audit ledger. Only a SHA-256 of the statement, its leading
+ * keyword, and the verdict are recorded — never the raw SQL text (statement
+ * literals can embed values that must not persist unredacted).
  */
+import { sha256Hex, type AuditSink } from "../audit/ledger.js";
 
 /** Result of validating a single SQL statement. */
 export interface SqlValidationResult {
@@ -31,6 +37,8 @@ export interface SqlSafetyOptions {
   allowMultipleStatements?: boolean;
   /** Inject/enforce a LIMIT cap on SELECT/WITH queries. Default true. */
   enforceLimit?: boolean;
+  /** Optional audit sink; every verdict is recorded when present. */
+  audit?: AuditSink;
 }
 
 /** Leading keywords that are permitted (read-only). */
@@ -180,11 +188,13 @@ export class SqlSafetyValidator {
   private readonly maxResultRows: number;
   private readonly allowMultipleStatements: boolean;
   private readonly enforceLimit: boolean;
+  private readonly audit: AuditSink | undefined;
 
   constructor(options: SqlSafetyOptions = {}) {
     this.maxResultRows = options.maxResultRows ?? DEFAULT_MAX_RESULT_ROWS;
     this.allowMultipleStatements = options.allowMultipleStatements ?? false;
     this.enforceLimit = options.enforceLimit ?? true;
+    this.audit = options.audit;
   }
 
   /** The active row cap. */
@@ -193,6 +203,10 @@ export class SqlSafetyValidator {
   }
 
   validate(sql: string): SqlValidationResult {
+    return this.recordVerdict(sql, this.decide(sql));
+  }
+
+  private decide(sql: string): SqlValidationResult {
     if (typeof sql !== "string" || !sql.trim()) {
       return { allowed: false, reason: "Empty SQL." };
     }
@@ -236,5 +250,23 @@ export class SqlSafetyValidator {
       allowed: true,
       normalizedSql: normalized.join(";\n"),
     };
+  }
+
+  /** Append the verdict to the audit ledger (hash + keyword, never raw SQL). */
+  private recordVerdict(
+    sql: string,
+    result: SqlValidationResult,
+  ): SqlValidationResult {
+    if (this.audit) {
+      const keyword =
+        typeof sql === "string" ? leadingKeyword(stripComments(sql)) : "";
+      this.audit.record("sql_validated", {
+        allowed: result.allowed,
+        sql_sha256: sha256Hex(typeof sql === "string" ? sql : String(sql)),
+        ...(keyword ? { keyword } : {}),
+        ...(result.allowed ? {} : { reason: result.reason }),
+      });
+    }
+    return result;
   }
 }

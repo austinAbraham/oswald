@@ -111,7 +111,7 @@ checklist. They run in a linear order with human gates between side effects.
 | 8 | **Delivery, PRs & Knowledge Capture** | Packages the change into a PR summary with validation evidence, drafts a ticket update, appends the decision log, and writes handoff/release notes — all draft-by-default and approval-gated. |
 
 (`build`, `ship`, and `compact` are deterministic, non-tentacle commands; `init`,
-`doctor`, and `next` are operator commands.)
+`doctor`, `status`, and `next` are operator commands.)
 
 ---
 
@@ -266,6 +266,9 @@ stays green offline. `oswald doctor` reports whether `snow` was detected.
 | `update-ticket <ticket>` | Write results back to the ticket; `--draft` (default) or `--post --yes`. |
 | `ship <ticket>` | Finalize: verify validation + PR summary, archive intermediates, mark `shipped`. |
 | `compact` | Summarize artifacts into `current_context.md`; archive noisy intermediates. |
+| `audit` | Inspect the tamper-evident audit ledger (`.oswald/audit.jsonl`); `export --format json\|csv`, `verify` walks the hash chain. |
+| `brief` | Assemble an exec-readable stakeholder brief (`brief.md`) from existing artifacts; `--stdout-only` to print without writing. |
+| `status` | Read-only run dashboard: phase, ticket, requirements, blockers, artifacts, tool health, next command (`--json`). |
 | `next` | Show (or `--run`) the recommended next command from state. |
 | `run <ticket>` | Execute the recommended next step; `--auto` loops until a terminal phase, a blocker, or an approval gate (consent is never auto-granted). |
 

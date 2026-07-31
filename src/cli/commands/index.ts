@@ -15,13 +15,16 @@ import { registerPr } from "./pr.js";
 import { registerUpdateTicket } from "./update-ticket.js";
 import { registerShip } from "./ship.js";
 import { registerCompact } from "./compact.js";
+import { registerAudit } from "./audit.js";
+import { registerBrief } from "./brief.js";
+import { registerStatus } from "./status.js";
 
 /**
  * Register every CLI command onto the program, in workflow order.
  *
  * Pipeline commands (intake → … → update-ticket) are tentacle-backed via the
- * shared runner; build/ship/compact are deterministic non-tentacle commands;
- * init/doctor/next/run are operator commands.
+ * shared runner; build/ship/compact/brief are deterministic non-tentacle
+ * commands; init/doctor/status/next/run are operator commands.
  */
 export function registerCommands(program: Command): void {
   // Operator / setup.
@@ -43,6 +46,9 @@ export function registerCommands(program: Command): void {
 
   // Maintenance + navigation.
   registerCompact(program);
+  registerAudit(program);
+  registerBrief(program);
+  registerStatus(program);
   registerNext(program);
   registerRun(program);
 }

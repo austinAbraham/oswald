@@ -8,6 +8,10 @@
  *      proceeds, recording the documented exceptions).
  *   2. A validation report exists and did not report blocking failures.
  *   3. A `pr_summary.md` exists (the change is packaged for review).
+ *   4. No artifact drift: no upstream artifact was re-generated or edited
+ *      after a downstream phase last ran — UNLESS `--allow-drift` explicitly
+ *      overrides (then it warns and records the override). Artifacts without
+ *      a recorded baseline ("unknown (no baseline)") never block shipping.
  *
  * On success it archives the noisy intermediate phase artifacts (keeping the
  * decision log + evidence-bearing summaries in place), writes a `ship_record.md`,
@@ -18,10 +22,15 @@ import { z } from "zod";
 import type { Command } from "commander";
 import { buildContext, advanceWorkflow } from "../../tentacles/base.js";
 import { assertLegalTransition } from "../../core/workflow/index.js";
+import { checkDrift } from "../../core/drift/index.js";
 import { logger } from "../../core/logging/index.js";
 import { resolveConfig } from "./_config.js";
 
-const OptionsSchema = z.object({ cwd: z.string() });
+const OptionsSchema = z.object({
+  cwd: z.string(),
+  // Explicit override only — never defaults to true.
+  allowDrift: z.boolean().default(false),
+});
 
 const PR_SUMMARY = "pr_summary.md";
 const VALIDATION_REPORT = "validation_report.md";
@@ -53,9 +62,13 @@ export function registerShip(program: Command): void {
     .description("Finalize: verify validation + PR summary, archive intermediates, mark shipped")
     .argument("<ticket>", "ticket id to finalize")
     .option("-C, --cwd <dir>", "project root", process.cwd())
+    .option(
+      "--allow-drift",
+      "ship despite detected artifact drift (the override is recorded in the ship record)",
+    )
     .addHelpText(
       "after",
-      "\nExamples:\n  oswald ship TICKET-42\n\nNote: ship refuses to bypass blocking validation failures.",
+      "\nExamples:\n  oswald ship TICKET-42\n\nNote: ship refuses to bypass blocking validation failures, and refuses when\nupstream artifacts drifted after downstream phases ran (unless --allow-drift).",
     )
     .action(async (ticket: string, raw: unknown) => {
       const opts = OptionsSchema.parse(raw);
@@ -116,7 +129,33 @@ export function registerShip(program: Command): void {
           return;
         }
 
+        // --- Guard 4: artifact drift (stale upstreams). ---------------------
+        // "unknown (no baseline)" findings (pre-existing runs without recorded
+        // hashes) NEVER block; only real stale/modified drift refuses.
+        const drift = await checkDrift({
+          state: ctx.state,
+          artifacts: ctx.artifacts,
+        });
+        if (drift.drifted.length > 0 && !opts.allowDrift) {
+          logger.error(
+            `ship: refusing — ${drift.drifted.length} artifact drift finding(s): upstream artifacts changed after downstream phases last ran.`,
+          );
+          for (const f of drift.drifted) {
+            logger.error(`    - ${f.phase} ← ${f.upstream}: ${f.detail}`);
+          }
+          logger.info(
+            "  next:  re-run the flagged phase(s) (stale), keep hand-edits with 'oswald doctor --accept-drift' (modified), or pass --allow-drift to override",
+          );
+          process.exitCode = 1;
+          return;
+        }
+
         const warnings: string[] = [];
+        if (drift.drifted.length > 0 && opts.allowDrift) {
+          warnings.push(
+            `${drift.drifted.length} artifact drift finding(s) overridden via --allow-drift — downstream artifacts may be stale.`,
+          );
+        }
         if (validationFailed && hasLimitations) {
           warnings.push(
             `Validation reported failures but ${KNOWN_LIMITATIONS} documents exceptions — shipping with documented limitations.`,
@@ -148,6 +187,13 @@ export function registerShip(program: Command): void {
               body: [
                 `- **Validation report:** present${validationFailed ? " (failures — documented exceptions accepted)" : " (no blocking failures)"}`,
                 `- **PR summary:** present (\`${PR_SUMMARY}\`)`,
+                `- **Drift check:** ${
+                  drift.drifted.length > 0
+                    ? `${drift.drifted.length} finding(s) — overridden via \`--allow-drift\``
+                    : drift.unknown.length > 0
+                      ? `no drift; ${drift.unknown.length} artifact(s) unknown (no baseline)`
+                      : "no drift"
+                }`,
                 `- **Documented exceptions:** ${hasLimitations ? `yes (\`${KNOWN_LIMITATIONS}\`)` : "none"}`,
                 `- **Blockers at ship:** ${blockers.length}`,
               ].join("\n"),

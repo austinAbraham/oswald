@@ -41,6 +41,30 @@ export const StatePolicySchema = z.object({
 
 export const StateArtifactsSchema = z.record(z.string()).default({});
 
+/**
+ * Content-hash baseline recorded when an artifact is written through the
+ * pipeline (sha256 of the content + when it was written). Powers the artifact
+ * drift checker. Optional with a default so pre-existing state files (which
+ * have no baselines) remain valid.
+ */
+export const StateArtifactHashSchema = z.object({
+  sha256: z.string(),
+  written_at: z.string(),
+});
+
+export const StateArtifactHashesSchema = z
+  .record(StateArtifactHashSchema)
+  .default({});
+
+/**
+ * When each phase last completed (command verb → ISO timestamp), recorded by
+ * `advanceWorkflow`. Tracked independently of artifact content so the drift
+ * checker sees a re-run even when its outputs are byte-identical (deterministic
+ * tentacles often rewrite the exact same bytes). Optional with a default so
+ * pre-existing state files remain valid.
+ */
+export const StatePhaseRunsSchema = z.record(z.string()).default({});
+
 export const StateTimestampsSchema = z.object({
   created_at: z.string(),
   updated_at: z.string(),
@@ -55,6 +79,8 @@ export const OswaldStateSchema = z.object({
   tools: z.record(ToolStatusSchema).default({}),
   policy: StatePolicySchema.default({}),
   artifacts: StateArtifactsSchema,
+  artifact_hashes: StateArtifactHashesSchema,
+  phase_runs: StatePhaseRunsSchema,
   timestamps: StateTimestampsSchema,
 });
 
@@ -64,5 +90,7 @@ export type StateTicket = z.infer<typeof StateTicketSchema>;
 export type StateStatus = z.infer<typeof StateStatusSchema>;
 export type StateRequirements = z.infer<typeof StateRequirementsSchema>;
 export type StatePolicy = z.infer<typeof StatePolicySchema>;
+export type StateArtifactHash = z.infer<typeof StateArtifactHashSchema>;
+export type StatePhaseRuns = z.infer<typeof StatePhaseRunsSchema>;
 export type StateTimestamps = z.infer<typeof StateTimestampsSchema>;
 export type OswaldState = z.infer<typeof OswaldStateSchema>;

@@ -51,6 +51,7 @@ import type {
   WarehouseProvider,
   QueryResult,
 } from "../../tools/index.js";
+import { sha256Hex } from "../../core/audit/index.js";
 import {
   type EdaQuery,
   type GrainVerdict,
@@ -324,20 +325,44 @@ export const edaTentacle: Tentacle<typeof EdaInputSchema, typeof EdaOutputSchema
     }
 
     // --- Optionally execute. ----------------------------------------------
+    // Every execution lands in the audit ledger: statement hash + outcome only
+    // (never the SQL text or result values).
     const executed: ExecutedQuery[] = [];
     if (willExecute && provider) {
       for (const q of safe) {
+        const auditBase = {
+          ...(ctx.ticketId ? { ticket: ctx.ticketId } : {}),
+          query: q.name,
+          provider: provider.name,
+          sql_sha256: sha256Hex(q.sql),
+        };
         try {
           const res = await provider.executeReadOnlySql(q.sql);
           if (res.ok && res.data) {
             executed.push({ query: q, row: firstRow(res.data) });
+            ctx.audit.record("sql_executed", {
+              ...auditBase,
+              ok: true,
+              rows: res.data.rows.length,
+              ...(res.data.truncated ? { truncated: true } : {}),
+            });
           } else {
             executed.push({ query: q, error: res.error ?? "unknown error" });
             warnings.push(`Query "${q.name}" failed to execute: ${res.error ?? "unknown error"}`);
+            ctx.audit.record("sql_executed", {
+              ...auditBase,
+              ok: false,
+              error: res.error ?? "unknown error",
+            });
           }
         } catch (err) {
           executed.push({ query: q, error: asMessage(err) });
           warnings.push(`Query "${q.name}" threw: ${asMessage(err)}`);
+          ctx.audit.record("sql_executed", {
+            ...auditBase,
+            ok: false,
+            error: asMessage(err),
+          });
         }
       }
     }

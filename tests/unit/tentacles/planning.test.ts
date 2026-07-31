@@ -70,7 +70,7 @@ async function seededContext(opts: {
     ticketId: "DEMO-1",
   });
   await seedPlanningPhase(ctx);
-  if (opts.design) await ctx.artifacts.write("design.md", opts.design);
+  if (opts.design) await ctx.artifacts.write("semantic_model_plan.md", opts.design);
   if (opts.acceptance) await ctx.artifacts.write("acceptance_criteria.md", opts.acceptance);
   if (opts.intake) await ctx.artifacts.write("intake.md", opts.intake);
   return ctx;

@@ -66,8 +66,11 @@ const ARCHIVABLE = [
   "build_preview.md",
 ];
 
-/** Extract the first non-heading, non-empty line of a markdown doc as its gist. */
-function firstGist(md: string): string {
+/**
+ * Extract the first non-heading, non-empty line of a markdown doc as its gist.
+ * Shared with the `brief` command so both summarize artifacts the same way.
+ */
+export function firstGist(md: string): string {
   for (const raw of md.split(/\r?\n/)) {
     const line = raw.trim();
     if (!line || line.startsWith("#")) continue;

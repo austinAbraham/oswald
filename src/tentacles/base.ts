@@ -38,6 +38,7 @@ import {
 } from "../core/policy/sensitive.js";
 import { ExternalContentSanitizer } from "../core/policy/external-content.js";
 import { ApprovalService } from "../core/approvals/index.js";
+import { AuditLedger } from "../core/audit/index.js";
 import {
   type TicketProvider,
   type WarehouseProvider,
@@ -144,6 +145,8 @@ export interface TentacleContext {
   providers: TentacleProviders;
   policy: TentaclePolicy;
   approvals: ApprovalService;
+  /** The persistent, tamper-evident audit ledger for this project. */
+  audit: AuditLedger;
   state: OswaldState;
   clock: Clock;
   logger: Logger;
@@ -226,6 +229,12 @@ export interface BuildContextOptions {
   /** Injected logger. Defaults to the shared logger. */
   logger?: Logger;
   /**
+   * Injected audit ledger. Defaults to the project's `.oswald/audit.jsonl`
+   * ledger. Callers that already hold a ledger (e.g. the CLI recording
+   * provider-selection events) pass it in so one instance owns the hash chain.
+   */
+  audit?: AuditLedger;
+  /**
    * If true and no state file exists yet, seed an in-memory initial state and
    * persist it rather than throwing. Intake (the first tentacle) needs this.
    */
@@ -253,6 +262,8 @@ export async function buildContext(
 
   const artifactDir = config.paths.artifact_dir || DEFAULT_ARTIFACT_DIR;
   const artifacts = new ArtifactManager(projectRoot, { artifactDir, clock });
+  const audit =
+    options.audit ?? new AuditLedger(projectRoot, { artifactDir, clock, logger });
 
   // State: read existing, or (optionally) seed a fresh one.
   let state: OswaldState;
@@ -275,24 +286,45 @@ export async function buildContext(
   const policy: TentaclePolicy = {
     sql: new SqlSafetyValidator({
       maxResultRows: config.policies.warehouse.max_result_rows,
+      audit,
     }),
+    // The detector is the LIVE redaction seam (every tentacle/command persists
+    // artifacts through it), so its hits land in the audit ledger too.
     sensitive: new SensitiveFieldDetector({
       enabled: config.policies.privacy.mask_sensitive_values,
+      audit,
     }),
-    sanitizer: new ExternalContentSanitizer(),
-    redact: redactArtifactContent,
+    sanitizer: new ExternalContentSanitizer({ audit }),
+    // Same signature as redactArtifactContent, but redaction hits land in the
+    // audit ledger (counts by kind only — never the redacted values).
+    redact: (content: string) => {
+      const result = redactArtifactContent(content);
+      if (result.report.count > 0) {
+        audit.record("redaction_applied", {
+          count: result.report.count,
+          by_kind: result.report.byKind,
+        });
+      }
+      return result;
+    },
   };
+
+  const ticketId = options.ticketId ?? state.ticket.id ?? undefined;
 
   return {
     config,
     artifacts,
     providers: options.providers ?? {},
     policy,
-    approvals: new ApprovalService(),
+    approvals: new ApprovalService({
+      audit,
+      ...(ticketId ? { ticketId } : {}),
+    }),
+    audit,
     state,
     clock,
     logger,
-    ticketId: options.ticketId ?? state.ticket.id ?? undefined,
+    ticketId,
     options: options.options ?? {},
   };
 }
@@ -340,7 +372,25 @@ export async function advanceWorkflow(
   const artifactDir = ctx.config.paths.artifact_dir || DEFAULT_ARTIFACT_DIR;
   const current = await readState(ctx.artifacts.root, artifactDir);
 
+  // Enforce state-machine legality BEFORE any bookkeeping: an illegal
+  // transition must leave state untouched.
   assertLegalTransition(current.status.phase, patch.phase);
+
+  // Persist content-hash baselines for every artifact written this run (the
+  // drift checker's input). A rewrite with IDENTICAL content keeps its
+  // original written_at, so an upstream no-op re-run never registers as a
+  // change for its downstream consumers.
+  const artifactHashes = { ...current.artifact_hashes };
+  for (const [name, rec] of Object.entries(ctx.artifacts.recordedHashes())) {
+    const prev = artifactHashes[name];
+    artifactHashes[name] = prev && prev.sha256 === rec.sha256 ? prev : rec;
+  }
+
+  // Record when this phase last ran, keyed by its command verb and INDEPENDENT
+  // of artifact content: deterministic tentacles often rewrite byte-identical
+  // outputs, and a re-run must still clear a stale-drift finding.
+  const stamp = ctx.clock.nowIso();
+  const phaseRuns = { ...current.phase_runs, [patch.lastCommand]: stamp };
 
   const next: OswaldState = {
     ...current,
@@ -359,8 +409,10 @@ export async function advanceWorkflow(
       ...current.artifacts,
       ...(patch.artifacts ?? {}),
     },
+    artifact_hashes: artifactHashes,
+    phase_runs: phaseRuns,
   };
-  next.timestamps.updated_at = ctx.clock.nowIso();
+  next.timestamps.updated_at = stamp;
 
   await writeState(next, artifactDir);
   ctx.state = next;

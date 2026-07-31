@@ -1,6 +1,8 @@
 export {
   ArtifactManager,
   ArtifactError,
+  sha256Hex,
+  type ArtifactHashRecord,
   type StructuredDoc,
 } from "./manager.js";
 export {
