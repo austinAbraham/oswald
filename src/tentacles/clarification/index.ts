@@ -81,11 +81,22 @@ export const ARTIFACT_NAMES = {
 /** The running decision log (also appended by the delivery tentacle). */
 const DECISION_LOG = "decision_log.md";
 
-const INTAKE_ARTIFACTS = {
+/** Intake artifacts this tentacle reads (each optional → degrade gracefully). */
+export const INTAKE_ARTIFACTS = {
   brief: "intake.md",
   requirements: "requirements.md",
   acceptance: "acceptance_criteria.md",
 } as const;
+
+/**
+ * Upstream artifacts this tentacle reads. Mirrored by the drift checker's
+ * consumption-edge table (kept aligned by a unit test).
+ */
+export const INPUT_ARTIFACTS = [
+  INTAKE_ARTIFACTS.brief,
+  INTAKE_ARTIFACTS.requirements,
+  INTAKE_ARTIFACTS.acceptance,
+] as const;
 
 // --- I/O schemas -----------------------------------------------------------
 
@@ -502,6 +513,8 @@ export const clarificationTentacle: Tentacle<
   title: "Clarification & Scoping",
   description:
     "Identify ambiguity, scope risks, and open questions before engineering — triage blocking vs non-blocking, group by stakeholder, propose assumptions, recommend splitting oversized tickets, and draft an external clarification comment (posting/creating is gated by approval).",
+
+  advancesTo: "context",
 
   inputSchema: ClarificationInputSchema,
   outputSchema: ClarificationOutputSchema,

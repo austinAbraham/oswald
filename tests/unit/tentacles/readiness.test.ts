@@ -18,10 +18,24 @@ import {
 import { runTentacleCommand } from "../../../src/cli/commands/_run.js";
 import { MockTicketProvider } from "../../../src/tools/index.js";
 import { parseConfig } from "../../../src/core/config/index.js";
-import { readState } from "../../../src/core/state/index.js";
+import { readState, updateState } from "../../../src/core/state/index.js";
+import type { WorkflowState } from "../../../src/core/workflow/index.js";
 import { fixedClock } from "../../../src/utils/time.js";
 
 const CLOCK = fixedClock("2026-06-22T00:00:00.000Z");
+
+/**
+ * Seed the workflow phase directly (plain state write): advanceWorkflow now
+ * enforces transition legality, so fixtures jump to the phase under test
+ * instead of advancing illegally.
+ */
+async function seedPhase(root: string, phase: WorkflowState): Promise<void> {
+  await updateState(
+    root,
+    (s) => ({ ...s, status: { ...s.status, phase } }),
+    { clock: CLOCK, artifactDir: ".oswald" },
+  );
+}
 const tmpDirs: string[] = [];
 
 async function makeTmpDir(): Promise<string> {
@@ -478,6 +492,8 @@ describe("readiness gate: blocking below the configured threshold", () => {
       initStateIfMissing: true,
       ticketId: "DEMO-14",
     });
+    // No intake ran, so jump to the phase clarification legally runs from.
+    await seedPhase(root, "clarification");
     const result = await clarificationTentacle.run(ctx);
 
     expect(result.output?.readinessGate.configured).toBe(true);
@@ -569,6 +585,9 @@ describe("readiness gate: human override (recorded decision)", () => {
     ).not.toBeNull();
 
     const fixture = await writeFixture(SPARSE_TICKET);
+    // An operator restarting intake resets the phase first: re-running intake
+    // from an advanced phase is otherwise (correctly) an illegal transition.
+    await seedPhase(root, "intake");
     const intakeCtx = await buildContext({
       projectRoot: root,
       config: cfg(),

@@ -9,7 +9,13 @@
  *
  * This is heuristic, not a guarantee — it is a defense-in-depth masking layer
  * on top of the read-only / aggregate-preferring warehouse policy.
+ *
+ * When constructed with an {@link AuditSink}, every artifact-content redaction
+ * hit is appended to the persistent audit ledger — counts by detector kind
+ * only, never the redacted values. This is the LIVE seam: every tentacle and
+ * command redacts through `SensitiveFieldDetector.redactArtifactContent`.
  */
+import type { AuditSink } from "../audit/ledger.js";
 
 /** Canonical sensitive field tokens from the project PII spec. */
 export const SENSITIVE_FIELD_TOKENS = [
@@ -297,9 +303,11 @@ export function redactArtifactContent(content: string): RedactContentResult {
  */
 export class SensitiveFieldDetector {
   readonly enabled: boolean;
+  private readonly audit: AuditSink | undefined;
 
-  constructor(options: { enabled?: boolean } = {}) {
+  constructor(options: { enabled?: boolean; audit?: AuditSink } = {}) {
     this.enabled = options.enabled ?? true;
+    this.audit = options.audit;
   }
 
   isSensitiveColumn(name: string): boolean {
@@ -329,6 +337,13 @@ export class SensitiveFieldDetector {
 
   redactArtifactContent(content: string): RedactContentResult {
     if (!this.enabled) return { content, report: { count: 0, byKind: {} } };
-    return redactArtifactContent(content);
+    const result = redactArtifactContent(content);
+    if (result.report.count > 0) {
+      this.audit?.record("redaction_applied", {
+        count: result.report.count,
+        by_kind: result.report.byKind,
+      });
+    }
+    return result;
   }
 }

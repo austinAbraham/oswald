@@ -58,10 +58,13 @@ export const ARTIFACT_NAMES = {
   changedFiles: "changed_files.md",
 } as const;
 
-// Prior-artifact filenames this tentacle reads (best-effort).
-const INPUT_ARTIFACTS = {
-  design: "design.md",
-  eda: "eda.md",
+// Prior-artifact filenames this tentacle reads (best-effort). Filenames match
+// what the upstream tentacles ACTUALLY write (their `ARTIFACT_NAMES`); the
+// drift checker's consumption-edge table mirrors this list, and a unit test
+// keeps the two aligned.
+export const INPUT_ARTIFACTS = {
+  design: "semantic_model_plan.md",
+  eda: "eda_report.md",
   intake: "intake.md",
   requirements: "requirements.md",
   acceptance: "acceptance_criteria.md",
@@ -248,6 +251,8 @@ export const planningTentacle: Tentacle<
   description:
     "Plan analytical dbt + SQL models from the design/EDA/intake artifacts: identify the modeling pattern, propose layered staging/intermediate/mart models, outline SQL/YAML/docs/tests/exposures, keep changes small, and emit a changed_files manifest of intended changes — without touching project models.",
 
+  advancesTo: "building",
+
   inputSchema: PlanningInputSchema,
   outputSchema: PlanningOutputSchema,
 
@@ -302,12 +307,12 @@ export const planningTentacle: Tentacle<
 
       if (!designMd) {
         warnings.push(
-          "No design.md found — planning from intake/requirements/EDA only. Run `design` first for a higher-fidelity plan.",
+          `No ${INPUT_ARTIFACTS.design} found — planning from intake/requirements/EDA only. Run \`design\` first for a higher-fidelity plan.`,
         );
       }
       if (!edaMd) {
         warnings.push(
-          "No eda.md found — data shapes/grain are inferred, not profiled. Run `eda` to validate the plan against real data.",
+          `No ${INPUT_ARTIFACTS.eda} found — data shapes/grain are inferred, not profiled. Run \`eda\` to validate the plan against real data.`,
         );
       }
       if (!intakeMd && !requirementsMd && !designMd) {

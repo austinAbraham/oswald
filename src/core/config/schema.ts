@@ -131,12 +131,57 @@ export const ReadinessPolicySchema = z
   })
   .default({});
 
+/**
+ * How much consent the policy itself may grant (the autonomy tier).
+ *
+ * - `draft_only` (default): classic behavior — every side effect needs an
+ *   explicit consent flag; `auto_approve` is ignored entirely.
+ * - `auto_safe`: the policy grants consent for the action classes listed in
+ *   `auto_approve` (existing action vocabulary/aliases, e.g. `commit`,
+ *   `pr_open`), but NEVER for anything matching `prohibit` — the prohibit
+ *   list is absolute and always wins.
+ *
+ * An explicit `--draft` still forces draft-only regardless of this block.
+ */
+/** Action labels that may never appear in `autonomy.auto_approve` (hard floor). */
+const NEVER_AUTO_APPROVABLE = ["push", "direct_push_to_protected_branch"];
+
+export const AutonomyPolicySchema = z
+  .object({
+    level: z.enum(["draft_only", "auto_safe"]).default("draft_only"),
+    auto_approve: z
+      .array(z.string())
+      .default([])
+      .refine(
+        (list) =>
+          !list.some((a) =>
+            NEVER_AUTO_APPROVABLE.includes(a.toLowerCase().trim()),
+          ),
+        {
+          message:
+            "policies.autonomy.auto_approve may never include 'push' or " +
+            "'direct_push_to_protected_branch' — pushes always require " +
+            "explicit human consent",
+        },
+      ),
+  })
+  .default({});
+
 export const PoliciesConfigSchema = z
   .object({
     require_approval_for: z
       .array(z.string())
       .default(["warehouse_write", "pr_open", "ticket_update"]),
     prohibit: z.array(z.string()).default(["direct_push_to_protected_branch"]),
+    autonomy: AutonomyPolicySchema,
+    /**
+     * When true, any SILENT provider fallback (e.g. `--warehouse snowflake`
+     * degrading to the mock because `snow` is missing) is a hard failure
+     * (exit 1) instead of a warning. Equivalent to passing
+     * `--strict-providers` on every pipeline command. Default false: fallbacks
+     * stay loud-but-tolerated.
+     */
+    strict_providers: z.boolean().default(false),
     warehouse: WarehousePolicySchema,
     privacy: PrivacyPolicySchema,
     readiness: ReadinessPolicySchema,

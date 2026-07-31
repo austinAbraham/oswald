@@ -4,7 +4,9 @@ import {
   isWorkflowState,
   nextState,
   canTransition,
+  assertLegalTransition,
   recommendNextCommand,
+  WorkflowTransitionError,
 } from "../../src/core/workflow/index.js";
 
 describe("workflow: state guards", () => {
@@ -57,8 +59,51 @@ describe("workflow: canTransition", () => {
 
   it("allows resuming from blocked into a non-terminal state", () => {
     expect(canTransition("blocked", "eda")).toBe(true);
-    expect(canTransition("blocked", "shipped")).toBe(false);
     expect(canTransition("blocked", "blocked")).toBe(false);
+  });
+
+  it("allows intake to bootstrap a fresh project through the intake phase", () => {
+    expect(canTransition("uninitialized", "clarification")).toBe(true);
+  });
+
+  it("allows skipping the optional clarification and eda phases", () => {
+    expect(canTransition("clarification", "eda")).toBe(true);
+    expect(canTransition("eda", "planning")).toBe(true);
+  });
+
+  it("allows delivery/ship to finalize straight from ready_for_pr", () => {
+    expect(canTransition("ready_for_pr", "shipped")).toBe(true);
+  });
+
+  it("allows ship to finalize a blocked workflow (documented exceptions)", () => {
+    expect(canTransition("blocked", "shipped")).toBe(true);
+  });
+
+  it("rejects other non-linear jumps despite the deliberate exceptions", () => {
+    expect(canTransition("uninitialized", "context")).toBe(false);
+    expect(canTransition("clarification", "design")).toBe(false);
+    expect(canTransition("context", "design")).toBe(false);
+    expect(canTransition("validating", "shipped")).toBe(false);
+  });
+});
+
+describe("workflow: assertLegalTransition", () => {
+  it("passes a canTransition-allowed move", () => {
+    expect(() => assertLegalTransition("building", "validating")).not.toThrow();
+    expect(() => assertLegalTransition("blocked", "planning")).not.toThrow();
+  });
+
+  it("passes an idempotent same-phase re-run", () => {
+    expect(() => assertLegalTransition("eda", "eda")).not.toThrow();
+  });
+
+  it("throws a WorkflowTransitionError carrying the endpoints on an illegal move", () => {
+    expect(() => assertLegalTransition("planning", "context")).toThrow(
+      WorkflowTransitionError,
+    );
+    expect(() => assertLegalTransition("planning", "context")).toThrow(
+      /Illegal workflow transition 'planning' → 'context'/,
+    );
   });
 });
 
@@ -70,9 +115,12 @@ describe("workflow: recommendNextCommand", () => {
     expect(recommendNextCommand("ready_for_ticket_update")).toBe("update-ticket");
   });
 
-  it("returns null for terminal states", () => {
+  it("returns null only for shipped (the one true dead-end)", () => {
     expect(recommendNextCommand("shipped")).toBeNull();
-    expect(recommendNextCommand("blocked")).toBeNull();
+  });
+
+  it("recommends resume from blocked (recovery, not a dead end)", () => {
+    expect(recommendNextCommand("blocked")).toBe("resume");
   });
 
   it("every state has a defined command mapping", () => {

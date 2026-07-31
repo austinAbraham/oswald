@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { promises as fs } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { buildContext } from "../../../src/tentacles/base.js";
+import { buildContext, type TentacleContext } from "../../../src/tentacles/base.js";
 import { contextTentacle } from "../../../src/tentacles/context/index.js";
 import {
   walkRepo,
@@ -19,7 +19,7 @@ import {
 import { MockTicketProvider, MockDocumentProvider } from "../../../src/tools/index.js";
 import type { DocumentContent } from "../../../src/tools/index.js";
 import { parseConfig } from "../../../src/core/config/index.js";
-import { readState } from "../../../src/core/state/index.js";
+import { readState, updateState } from "../../../src/core/state/index.js";
 import { fixedClock } from "../../../src/utils/time.js";
 
 const CLOCK = fixedClock("2026-06-22T00:00:00.000Z");
@@ -40,6 +40,15 @@ afterEach(async () => {
 
 function cfg() {
   return parseConfig({ project: { name: "demo" } });
+}
+
+/** Move a freshly-seeded state into the phase the tentacle under test owns. */
+async function seedContextPhase(ctx: TentacleContext): Promise<void> {
+  ctx.state = await updateState(
+    ctx.artifacts.root,
+    (s) => ({ ...s, status: { ...s.status, phase: "context" } }),
+    { clock: CLOCK },
+  );
 }
 
 /**
@@ -204,6 +213,7 @@ describe("context tentacle: existing dbt project", () => {
       options: { query: "daily active customers model from salesforce" },
     });
 
+    await seedContextPhase(ctx);
     const result = await contextTentacle.run(ctx);
 
     expect(result.artifactsWritten).toHaveLength(4);
@@ -257,6 +267,7 @@ describe("context tentacle: existing dbt project", () => {
       options: { query: "orders" },
     });
 
+    await seedContextPhase(ctx);
     const result = await contextTentacle.run(ctx);
 
     expect(result.output?.injectionDetected).toBe(true);
@@ -279,6 +290,7 @@ describe("context tentacle: existing dbt project", () => {
       options: { query: "daily active customers" },
     });
 
+    await seedContextPhase(ctx);
     await contextTentacle.run(ctx);
     const state = await readState(root);
 
@@ -330,6 +342,7 @@ describe("context tentacle: with providers", () => {
       options: { query: "daily active customers" },
     });
 
+    await seedContextPhase(ctx);
     const result = await contextTentacle.run(ctx);
 
     expect(result.output?.relatedTickets).toContain("OLD-1");
@@ -357,6 +370,7 @@ describe("context tentacle: greenfield (degraded)", () => {
       options: { query: "brand new model" },
     });
 
+    await seedContextPhase(ctx);
     const result = await contextTentacle.run(ctx);
 
     expect(result.warnings?.some((w) => /greenfield/i.test(w))).toBe(true);

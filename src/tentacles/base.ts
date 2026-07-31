@@ -24,9 +24,11 @@ import {
   createInitialState,
   writeState,
   DEFAULT_ARTIFACT_DIR,
+  type BlockedMode,
   type OswaldState,
 } from "../core/state/index.js";
 import {
+  assertLegalTransition,
   recommendNextCommand,
   type WorkflowState,
 } from "../core/workflow/index.js";
@@ -37,6 +39,7 @@ import {
 } from "../core/policy/sensitive.js";
 import { ExternalContentSanitizer } from "../core/policy/external-content.js";
 import { ApprovalService } from "../core/approvals/index.js";
+import { AuditLedger } from "../core/audit/index.js";
 import {
   type TicketProvider,
   type WarehouseProvider,
@@ -143,6 +146,8 @@ export interface TentacleContext {
   providers: TentacleProviders;
   policy: TentaclePolicy;
   approvals: ApprovalService;
+  /** The persistent, tamper-evident audit ledger for this project. */
+  audit: AuditLedger;
   state: OswaldState;
   clock: Clock;
   logger: Logger;
@@ -175,6 +180,16 @@ export interface Tentacle<
   readonly id: string;
   readonly title: string;
   readonly description: string;
+
+  /**
+   * The phase a successful run advances the workflow into (the `phase` its
+   * `advanceWorkflow` patch carries on the success path — failure paths may
+   * land in `blocked`, which is reachable from every non-terminal phase).
+   * The CLI pre-flights `canTransition(current, advancesTo)` against this
+   * BEFORE running the tentacle, so an out-of-order command refuses without
+   * committing any side effect.
+   */
+  readonly advancesTo: WorkflowState;
 
   /** Validates the per-run options/input. */
   readonly inputSchema: Input;
@@ -215,6 +230,12 @@ export interface BuildContextOptions {
   /** Injected logger. Defaults to the shared logger. */
   logger?: Logger;
   /**
+   * Injected audit ledger. Defaults to the project's `.oswald/audit.jsonl`
+   * ledger. Callers that already hold a ledger (e.g. the CLI recording
+   * provider-selection events) pass it in so one instance owns the hash chain.
+   */
+  audit?: AuditLedger;
+  /**
    * If true and no state file exists yet, seed an in-memory initial state and
    * persist it rather than throwing. Intake (the first tentacle) needs this.
    */
@@ -242,6 +263,8 @@ export async function buildContext(
 
   const artifactDir = config.paths.artifact_dir || DEFAULT_ARTIFACT_DIR;
   const artifacts = new ArtifactManager(projectRoot, { artifactDir, clock });
+  const audit =
+    options.audit ?? new AuditLedger(projectRoot, { artifactDir, clock, logger });
 
   // State: read existing, or (optionally) seed a fresh one.
   let state: OswaldState;
@@ -264,24 +287,45 @@ export async function buildContext(
   const policy: TentaclePolicy = {
     sql: new SqlSafetyValidator({
       maxResultRows: config.policies.warehouse.max_result_rows,
+      audit,
     }),
+    // The detector is the LIVE redaction seam (every tentacle/command persists
+    // artifacts through it), so its hits land in the audit ledger too.
     sensitive: new SensitiveFieldDetector({
       enabled: config.policies.privacy.mask_sensitive_values,
+      audit,
     }),
-    sanitizer: new ExternalContentSanitizer(),
-    redact: redactArtifactContent,
+    sanitizer: new ExternalContentSanitizer({ audit }),
+    // Same signature as redactArtifactContent, but redaction hits land in the
+    // audit ledger (counts by kind only — never the redacted values).
+    redact: (content: string) => {
+      const result = redactArtifactContent(content);
+      if (result.report.count > 0) {
+        audit.record("redaction_applied", {
+          count: result.report.count,
+          by_kind: result.report.byKind,
+        });
+      }
+      return result;
+    },
   };
+
+  const ticketId = options.ticketId ?? state.ticket.id ?? undefined;
 
   return {
     config,
     artifacts,
     providers: options.providers ?? {},
     policy,
-    approvals: new ApprovalService(),
+    approvals: new ApprovalService({
+      audit,
+      ...(ticketId ? { ticketId } : {}),
+    }),
+    audit,
     state,
     clock,
     logger,
-    ticketId: options.ticketId ?? state.ticket.id ?? undefined,
+    ticketId,
     options: options.options ?? {},
   };
 }
@@ -300,6 +344,14 @@ function defaultConfigPath(projectRoot: string): string {
  * Tentacles call this at the end of `run` to advance the workflow. It re-reads
  * state from disk, applies the phase + command + optional requirements/artifact
  * patches, and writes it back (stamping `updated_at` from the injected clock).
+ *
+ * The state machine is ENFORCED here as the backstop: the patch may keep the
+ * current phase (an idempotent re-run of the phase's command) or make a move
+ * `canTransition` allows. Anything else throws a `WorkflowTransitionError`
+ * before any mutation, leaving state on disk untouched. Commands additionally
+ * PRE-FLIGHT the same assertion (via each tentacle's `advancesTo`) before any
+ * side effect runs, so an out-of-order command refuses before — not after —
+ * external posts or project-tree writes happen.
  */
 export interface AdvanceWorkflowPatch {
   /** The phase to move into (this tentacle's completed phase output). */
@@ -312,6 +364,15 @@ export interface AdvanceWorkflowPatch {
   requirements?: Partial<OswaldState["requirements"]>;
   /** Blockers to set (e.g. unresolved open questions that gate progress). */
   blockers?: string[];
+  /**
+   * Fidelity of the run producing a `blocked` transition: `external` when real
+   * external checks executed (dbt build/test, injected validation commands),
+   * `local` when only offline classification ran. Only meaningful with
+   * `phase: "blocked"`; omit when the blocking run's fidelity is unknown
+   * (e.g. delivery re-reading a validation signal) — the recorded mode is then
+   * left untouched.
+   */
+  blockedMode?: BlockedMode;
 }
 
 export async function advanceWorkflow(
@@ -321,15 +382,58 @@ export async function advanceWorkflow(
   const artifactDir = ctx.config.paths.artifact_dir || DEFAULT_ARTIFACT_DIR;
   const current = await readState(ctx.artifacts.root, artifactDir);
 
+  // Enforce state-machine legality BEFORE any bookkeeping: an illegal
+  // transition must leave state untouched.
+  assertLegalTransition(current.status.phase, patch.phase);
+
+  // Persist content-hash baselines for every artifact written this run (the
+  // drift checker's input). A rewrite with IDENTICAL content keeps its
+  // original written_at, so an upstream no-op re-run never registers as a
+  // change for its downstream consumers.
+  const artifactHashes = { ...current.artifact_hashes };
+  for (const [name, rec] of Object.entries(ctx.artifacts.recordedHashes())) {
+    const prev = artifactHashes[name];
+    artifactHashes[name] = prev && prev.sha256 === rec.sha256 ? prev : rec;
+  }
+
+  // Record when this phase last ran, keyed by its command verb and INDEPENDENT
+  // of artifact content: deterministic tentacles often rewrite byte-identical
+  // outputs, and a re-run must still clear a stale-drift finding.
+  const stamp = ctx.clock.nowIso();
+  const phaseRuns = { ...current.phase_runs, [patch.lastCommand]: stamp };
+
+  const status: OswaldState["status"] = {
+    ...current.status,
+    phase: patch.phase,
+    last_command: patch.lastCommand,
+    next_recommended_command: recommendNextCommand(patch.phase),
+    blockers: patch.blockers ?? current.status.blockers,
+  };
+  // Record where the workflow was when it entered `blocked` — and at what
+  // fidelity the blocking run executed — so `oswald resume` can recover it
+  // (and refuse to clear a REAL external block with a local-only re-run).
+  // Re-blocking while already blocked preserves the original origin and never
+  // DOWNGRADES an `external` mode to `local` (an external failure can only be
+  // cleared by an external re-run); leaving `blocked` clears both markers.
+  if (patch.phase === "blocked") {
+    const freshlyBlocked = current.status.phase !== "blocked";
+    if (freshlyBlocked) {
+      status.blocked_from = current.status.phase;
+    }
+    if (
+      patch.blockedMode &&
+      (freshlyBlocked || current.status.blocked_mode !== "external")
+    ) {
+      status.blocked_mode = patch.blockedMode;
+    }
+  } else {
+    delete status.blocked_from;
+    delete status.blocked_mode;
+  }
+
   const next: OswaldState = {
     ...current,
-    status: {
-      ...current.status,
-      phase: patch.phase,
-      last_command: patch.lastCommand,
-      next_recommended_command: recommendNextCommand(patch.phase),
-      blockers: patch.blockers ?? current.status.blockers,
-    },
+    status,
     requirements: {
       ...current.requirements,
       ...(patch.requirements ?? {}),
@@ -338,8 +442,10 @@ export async function advanceWorkflow(
       ...current.artifacts,
       ...(patch.artifacts ?? {}),
     },
+    artifact_hashes: artifactHashes,
+    phase_runs: phaseRuns,
   };
-  next.timestamps.updated_at = ctx.clock.nowIso();
+  next.timestamps.updated_at = stamp;
 
   await writeState(next, artifactDir);
   ctx.state = next;

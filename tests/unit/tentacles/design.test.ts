@@ -3,10 +3,10 @@ import { promises as fs } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { parse as parseYaml } from "yaml";
-import { buildContext } from "../../../src/tentacles/base.js";
+import { buildContext, type TentacleContext } from "../../../src/tentacles/base.js";
 import { designTentacle } from "../../../src/tentacles/design/index.js";
 import { parseConfig } from "../../../src/core/config/index.js";
-import { readState } from "../../../src/core/state/index.js";
+import { readState, updateState } from "../../../src/core/state/index.js";
 import { fixedClock } from "../../../src/utils/time.js";
 import {
   detectGrain,
@@ -35,6 +35,15 @@ afterEach(async () => {
 
 function cfg() {
   return parseConfig({ project: { name: "demo" } });
+}
+
+/** Move a freshly-seeded state into the phase the tentacle under test owns. */
+async function seedDesignPhase(ctx: TentacleContext): Promise<void> {
+  ctx.state = await updateState(
+    ctx.artifacts.root,
+    (s) => ({ ...s, status: { ...s.status, phase: "design" } }),
+    { clock: CLOCK },
+  );
 }
 
 /** Seed prior-phase artifacts in the .oswald dir before running design. */
@@ -139,7 +148,7 @@ describe("design tentacle: well-specified upstream artifacts", () => {
     const root = await makeTmpDir();
     await seedArtifacts(root, {
       "requirements.md": GOOD_REQUIREMENTS,
-      "eda.md": EDA_NOTES,
+      "eda_report.md": EDA_NOTES,
     });
 
     const ctx = await buildContext({
@@ -150,6 +159,7 @@ describe("design tentacle: well-specified upstream artifacts", () => {
       ticketId: "DEMO-1",
     });
 
+    await seedDesignPhase(ctx);
     const result = await designTentacle.run(ctx);
 
     expect(result.artifactsWritten).toHaveLength(3);
@@ -180,7 +190,7 @@ describe("design tentacle: well-specified upstream artifacts", () => {
 
   it("renders valid YAML with assumption/open_question tags (never invents logic)", async () => {
     const root = await makeTmpDir();
-    await seedArtifacts(root, { "requirements.md": GOOD_REQUIREMENTS, "eda.md": EDA_NOTES });
+    await seedArtifacts(root, { "requirements.md": GOOD_REQUIREMENTS, "eda_report.md": EDA_NOTES });
 
     const ctx = await buildContext({
       projectRoot: root,
@@ -189,6 +199,7 @@ describe("design tentacle: well-specified upstream artifacts", () => {
       initStateIfMissing: true,
     });
 
+    await seedDesignPhase(ctx);
     await designTentacle.run(ctx);
 
     const specRaw = await ctx.artifacts.read("metric_spec.yml");
@@ -231,6 +242,7 @@ describe("design tentacle: well-specified upstream artifacts", () => {
       initStateIfMissing: true,
     });
 
+    await seedDesignPhase(ctx);
     await designTentacle.run(ctx);
     const state = await readState(root);
 
@@ -262,6 +274,7 @@ describe("design tentacle: trust boundary + redaction", () => {
       initStateIfMissing: true,
     });
 
+    await seedDesignPhase(ctx);
     const result = await designTentacle.run(ctx);
     expect(result.output?.injectionDetected).toBe(true);
     expect(result.warnings?.some((w) => /injection/i.test(w))).toBe(true);
@@ -286,6 +299,7 @@ describe("design tentacle: sparse / missing inputs (degraded)", () => {
       initStateIfMissing: true,
     });
 
+    await seedDesignPhase(ctx);
     const result = await designTentacle.run(ctx);
     expect(result.openQuestions?.length).toBeGreaterThan(0);
     // churn/top are vague → open question to define them.
@@ -306,6 +320,7 @@ describe("design tentacle: sparse / missing inputs (degraded)", () => {
       initStateIfMissing: true,
     });
 
+    await seedDesignPhase(ctx);
     const result = await designTentacle.run(ctx);
     expect(result.warnings?.some((w) => /draft-only/i.test(w))).toBe(true);
     expect(await ctx.artifacts.exists("metric_spec.yml")).toBe(true);

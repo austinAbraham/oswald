@@ -20,7 +20,8 @@ export const ARTIFACT_FILES = {
   pr: "pr.md",
   ticketUpdate: "ticket-update.md",
   ship: "ship.md",
-  audit: "audit.log",
+  brief: "brief.md",
+  audit: "audit.jsonl",
 } as const;
 
 export type ArtifactKey = keyof typeof ARTIFACT_FILES;

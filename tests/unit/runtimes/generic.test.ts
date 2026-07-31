@@ -31,7 +31,7 @@ describe("GenericAdapter", () => {
       artifactDir: ".oswald",
       projectName: "demo",
     });
-    // 15 commands + 1 README index.
+    // 16 commands + 1 README index.
     expect(files).toHaveLength(OSWALD_COMMANDS.length + 1);
     for (const cmd of OSWALD_COMMANDS) {
       const f = files.find((x) =>
