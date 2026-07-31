@@ -75,3 +75,10 @@ See provider docs URLs in [MCP.md](./MCP.md).
 - **Multi-ticket** — concurrent ticket pipelines with isolation.
 - **Team policies** — per-team approval/redaction policy profiles.
 - **Audit UI** — a viewer over the structured audit log.
+
+## Candidate backlog
+
+A ranked, scored menu of 40 candidate features (from a structured ideation
+pass over the codebase, 2026-07-31) lives in [BACKLOG.md](./BACKLOG.md) —
+including which items are already in flight as draft PRs. Items graduate from
+there into the phased plan above.
