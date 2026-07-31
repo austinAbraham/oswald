@@ -123,6 +123,14 @@ export const PoliciesConfigSchema = z
       .array(z.string())
       .default(["warehouse_write", "pr_open", "ticket_update"]),
     prohibit: z.array(z.string()).default(["direct_push_to_protected_branch"]),
+    /**
+     * When true, any SILENT provider fallback (e.g. `--warehouse snowflake`
+     * degrading to the mock because `snow` is missing) is a hard failure
+     * (exit 1) instead of a warning. Equivalent to passing
+     * `--strict-providers` on every pipeline command. Default false: fallbacks
+     * stay loud-but-tolerated.
+     */
+    strict_providers: z.boolean().default(false),
     warehouse: WarehousePolicySchema,
     privacy: PrivacyPolicySchema,
   })

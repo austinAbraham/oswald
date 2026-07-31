@@ -16,6 +16,17 @@ The binary is `oswald` (see `package.json` `bin`). When it is not on `PATH`, use
 - **Consent flags are never defaults.** Writes are default-deny; a `--yes` /
   `--post` / `--open` / `--apply` is required, and `--draft` always forces
   draft-only. See [SECURITY_MODEL.md](./SECURITY_MODEL.md#approval-gates).
+- **Provider resolution is loud.** Every pipeline command prints a one-line
+  `providers:` table showing what was REQUESTED vs what was RESOLVED per slot
+  and why any fallback happened, e.g.
+  `providers: warehouse: snowflake→MOCK (snow CLI not found on PATH); ticket: mock`
+  (the fallback target is uppercased). By default a fallback is tolerated with
+  a warning; pass **`--strict-providers`** (or set
+  `policies.strict_providers: true` in `oswald.yml`) to turn any silent
+  fallback into a hard failure — **exit 1** with a remediation hint, before the
+  tentacle runs — so mock results can never masquerade as real evidence.
+  Explicit suppression (`--local-only`, `--warehouse none`) is reported but is
+  never a fallback.
 
 ## Exit codes
 
@@ -25,7 +36,7 @@ a uniform contract:
 | Code | Meaning |
 |------|---------|
 | `0`  | success — the phase advanced; artifacts written |
-| `1`  | hard error — the command threw, an unknown tentacle, or a precondition failed |
+| `1`  | hard error — the command threw, an unknown tentacle, or a precondition failed (e.g. `--strict-providers` refused a provider fallback) |
 | `2`  | **blocked** — the workflow landed in `blocked` (e.g. a validation gate failed). Not a crash; artifacts are still written, but the non-zero code halts automation. |
 
 Operator commands (`doctor`, `ship`, `compact`, `next`, `init`) use `0`/`1`
@@ -81,9 +92,9 @@ dispatched command's code.
 These advance the linear state machine
 `intake → clarification → context → eda → design → planning → building →
 validating → ready_for_pr → ready_for_ticket_update → shipped` (`blocked` is a
-recoverable side state). Each prints a standard block: what it did, warnings,
-open questions, artifacts written, and the suggested next command. All return
-`0` / `1` / `2` per the table above.
+recoverable side state). Each prints a standard block: what it did, the
+provider resolution table, warnings, open questions, artifacts written, and the
+suggested next command. All return `0` / `1` / `2` per the table above.
 
 ### `oswald intake [ticketOrInput]`
 Ingest a ticket and draft structured requirements. The positional is either a
@@ -94,6 +105,7 @@ ticket id (when a provider is given) or inline ticket text.
 | `--from-file <path>` | read raw ticket markdown from a local file |
 | `--provider <name>` | ticket source: `jira` / `github` / `local` / `mock` |
 | `--output <dir>` | artifact output dir override (advisory) |
+| `--strict-providers` | fail (exit 1) instead of falling back to a mock provider |
 | `-C, --cwd <dir>` | project root |
 
 Examples: `oswald intake --from-file ./ticket.md`,
@@ -108,6 +120,7 @@ Triage open questions and draft a clarification comment. Posting is gated.
 | `--draft-comment` | render the clarification comment as a draft only |
 | `--post-comment` | post the clarification comment (requires approval) |
 | `-y, --yes` | grant explicit approval for gated side effects |
+| `--strict-providers` | fail (exit 1) instead of falling back to a mock provider |
 | `-C, --cwd <dir>` | project root |
 
 **Writes:** `clarifications.md`. Posting (`ticket_update`) is approval-gated.
@@ -121,6 +134,7 @@ Gather existing warehouse/repo/doc context so work is not duplicated.
 | `--include-docs` | include related documents (needs a doc provider) |
 | `--include-prs` | include related PRs (needs a repo provider) |
 | `--include-tickets` | include related tickets (needs a ticket provider) |
+| `--strict-providers` | fail (exit 1) instead of falling back to a mock provider |
 | `-C, --cwd <dir>` | project root |
 
 **Writes:** `context.md`.
@@ -139,13 +153,17 @@ passes the read-only safety validator; rows are LIMIT-capped.
 | `--connection <name>` | `snow` connection NAME (required for `--execute` with `snowflake`) |
 | `--warehouse-command <cmd>` | warehouse CLI invocation (default `snow`) |
 | `--query-timeout <ms>` | per-query subprocess timeout in ms |
+| `--strict-providers` | fail (exit 1) instead of falling back to a mock provider |
 | `-C, --cwd <dir>` | project root |
 
 **Writes:** `eda.md`. `--warehouse snowflake --execute` runs live read-only EDA via
 the `snow` CLI (only a connection **NAME** crosses the boundary — never credentials);
 it requires an explicit `--connection` (or `warehouse.connection` in `oswald.yml`).
 When `snow` is absent or no connection is configured it falls back to the mock
-provider. See the README's "Real Snowflake EDA via the `snow` CLI" section.
+provider — visibly, via the `providers:` table (e.g. `warehouse:
+snowflake→MOCK (snow CLI not found on PATH)`); with `--strict-providers` (or
+`policies.strict_providers: true`) that fallback is refused with exit 1
+instead. See the README's "Real Snowflake EDA via the `snow` CLI" section.
 
 ### `oswald design <ticket>`
 Convert business language into precise metric/semantic definitions.
@@ -200,6 +218,7 @@ Package the change into a PR summary. Opening the PR is gated.
 | `--draft` | produce the PR summary as a draft only (default) |
 | `--open` | open the pull request (requires approval + a repo provider) |
 | `-y, --yes` | grant explicit approval for gated side effects |
+| `--strict-providers` | fail (exit 1) instead of falling back to a mock provider |
 | `-C, --cwd <dir>` | project root |
 
 **Writes:** `pr.md`. Opening (`open_pull_request`) is approval-gated; direct push
@@ -213,6 +232,7 @@ Write results back to the ticket. Posting is gated.
 | `--draft` | produce the ticket update as a draft only (default) |
 | `--post` | post the update to the ticket (requires approval + provider) |
 | `-y, --yes` | grant explicit approval for gated side effects |
+| `--strict-providers` | fail (exit 1) instead of falling back to a mock provider |
 | `-C, --cwd <dir>` | project root |
 
 **Writes:** `ticket-update.md`. Posting (`ticket_update`) is approval-gated.

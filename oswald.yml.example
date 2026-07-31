@@ -67,6 +67,10 @@ policies:
     - ticket_update
   prohibit:
     - direct_push_to_protected_branch
+  # When true, any silent provider fallback (e.g. --warehouse snowflake degrading
+  # to the mock because `snow` is missing) is a hard failure (exit 1) instead of a
+  # warning — same as passing --strict-providers on every pipeline command.
+  strict_providers: false
   warehouse:
     read_only_by_default: true
     max_sample_rows: 100
