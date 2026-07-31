@@ -63,7 +63,15 @@ export const ARTIFACT_NAMES = {
   limitations: "known_limitations.md",
 } as const;
 
-const ACCEPTANCE_ARTIFACT = "acceptance_criteria.md";
+/** The single upstream artifact this tentacle reads (intake's acceptance list). */
+export const ACCEPTANCE_ARTIFACT = "acceptance_criteria.md";
+
+/**
+ * Upstream artifacts this tentacle reads (its own prior outputs excluded).
+ * Mirrored by the drift checker's consumption-edge table (kept aligned by a
+ * unit test).
+ */
+export const INPUT_ARTIFACTS = [ACCEPTANCE_ARTIFACT] as const;
 
 // --- I/O schemas (zod-free lightweight contract via base patterns) ---------
 // NOTE: the foundation uses zod elsewhere; we import it here to keep parity
