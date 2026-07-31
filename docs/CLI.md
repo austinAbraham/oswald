@@ -42,10 +42,10 @@ a uniform contract:
 | `1`  | hard error — the command threw, an unknown tentacle, or a precondition failed (e.g. `--strict-providers` refused a provider fallback) |
 | `2`  | **blocked** — the workflow landed in `blocked` (e.g. a validation gate failed). Not a crash; artifacts are still written, but the non-zero code halts automation. |
 
-Operator commands (`doctor`, `status`, `ship`, `compact`, `next`, `init`) use
-`0`/`1` (`doctor` returns `1` on any fail-status check; `ship`/`compact` return
-`1` on a precondition failure; `status` is read-only and returns `0` even when
-the project is uninitialized).
+Operator commands (`doctor`, `status`, `ship`, `compact`, `brief`, `next`,
+`init`) use `0`/`1` (`doctor` returns `1` on any fail-status check;
+`ship`/`compact`/`brief` return `1` on a precondition failure; `status` is
+read-only and returns `0` even when the project is uninitialized).
 
 ---
 
@@ -331,6 +331,25 @@ the context-rot-resistance maintenance step.
 **Writes:** a compacted context summary; archives intermediates. **Exit:** `0` /
 `1`.
 
+### `oswald brief`
+Assemble an exec-readable stakeholder brief from the artifacts that already
+exist — what was asked, where the work stands in business terms, what is
+confirmed vs assumed vs still open (evidence-ledger tallies), blockers and who
+is needed to unblock, and known limitations. Deterministic and read-only over
+the pipeline: it runs no new analysis and never changes the workflow phase.
+
+| Option | Description |
+|--------|-------------|
+| `--stdout-only` | print the brief without writing `brief.md` |
+| `-C, --cwd <dir>` | project root |
+
+**Writes:** `brief.md` (skipped with `--stdout-only`); always prints the brief.
+Degrades gracefully — missing artifacts become "not yet known" statements.
+Fenced code blocks (where artifacts embed the raw wrapped ticket text) are
+excluded from the evidence tallies and stakeholder extraction, so ticket
+content cannot forge tallies or steer the brief.
+**Exit:** `0` / `1` (`1` only when no `.oswald/state.yml` exists yet).
+
 ---
 
 ## Artifacts
@@ -351,4 +370,5 @@ Canonical filenames written under the artifact dir (default `.oswald/`):
 | pr | `pr.md` |
 | update-ticket | `ticket-update.md` |
 | ship | `ship.md` |
+| brief | `brief.md` |
 | audit log | `audit.log` |
