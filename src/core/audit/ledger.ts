@@ -18,6 +18,14 @@
  *   - DURABLE APPENDS: writes are synchronous — when `record()` returns, the
  *     record is on disk (or dropped with a warning). A crash mid-command cannot
  *     silently lose the trailing records of an otherwise-successful append.
+ *   - CRASH ISOLATION: a kill/power-loss/ENOSPC mid-append can leave a partial
+ *     final line with no trailing newline. The next append detects that and
+ *     prepends a newline so the damaged fragment stays isolated on its own
+ *     line — it never corrupts the next legitimate record. `verify()` then
+ *     classifies such fragments as aborted appends (reported via
+ *     `truncatedLines`), distinct from tampering: a junk line is only excused
+ *     when the hash chain provably continues across it (or it trails a file
+ *     that ends without a newline — the crash signature).
  *   - STRICT READS: `verify()` walks the chain strictly and reports the FIRST
  *     broken link (malformed line, sequence gap, prev-hash mismatch, or content
  *     hash mismatch).
@@ -104,6 +112,13 @@ export interface AuditVerifyReport {
   records: number;
   /** The first broken link, when the chain does not verify. */
   brokenAt?: { line: number; reason: string };
+  /**
+   * 1-based lines classified as crash-truncated (aborted) appends rather than
+   * tampering: junk the hash chain provably continues across, or a trailing
+   * fragment in a file that ends without a newline. Informational — the chain
+   * itself still verifies.
+   */
+  truncatedLines?: number[];
 }
 
 /** SHA-256 hex digest of a UTF-8 string. */
@@ -158,6 +173,12 @@ export class AuditLedger implements AuditSink {
   private readonly log: Logger;
   /** Cached chain tail; null until the first append reads it from disk. */
   private tail: { seq: number; hash: string } | null = null;
+  /**
+   * Set when the on-disk file ends WITHOUT a newline (a crash-truncated
+   * append). The next append prepends one so the partial line stays isolated
+   * on its own line instead of swallowing the new record.
+   */
+  private isolatePartialLine = false;
   private warnedWriteFailure = false;
 
   constructor(root: string, options: AuditLedgerOptions = {}) {
@@ -194,7 +215,12 @@ export class AuditLedger implements AuditSink {
       };
       const record: AuditRecord = { ...payload, hash: computeRecordHash(payload) };
       mkdirSync(path.dirname(this.filePath), { recursive: true });
-      appendFileSync(this.filePath, `${JSON.stringify(record)}\n`, "utf8");
+      appendFileSync(
+        this.filePath,
+        `${this.isolatePartialLine ? "\n" : ""}${JSON.stringify(record)}\n`,
+        "utf8",
+      );
+      this.isolatePartialLine = false;
       this.tail = { seq: record.seq, hash: record.hash };
     } catch (err) {
       if (!this.warnedWriteFailure) {
@@ -211,7 +237,9 @@ export class AuditLedger implements AuditSink {
     if (!existsSync(this.filePath)) {
       return { seq: 0, hash: AUDIT_GENESIS_HASH };
     }
-    const lines = readFileSync(this.filePath, "utf8").split("\n");
+    const content = readFileSync(this.filePath, "utf8");
+    this.isolatePartialLine = content.length > 0 && !content.endsWith("\n");
+    const lines = content.split("\n");
     for (let i = lines.length - 1; i >= 0; i -= 1) {
       const record = parseRecordLine(lines[i]!);
       if (record) return { seq: record.seq, hash: record.hash };
@@ -243,12 +271,22 @@ export class AuditLedger implements AuditSink {
    * STRICT chain walk. Reports the first broken link: a malformed line, a
    * sequence gap, a `prev_hash` that does not match the prior record, or a
    * content hash that does not match the record itself.
+   *
+   * One class of malformed line is excused: a crash-truncated (aborted)
+   * append. A junk run counts as one ONLY when the chain provably continues
+   * across it — the next parseable record chains directly from the last
+   * verified record — or when it trails a file that ends without a newline
+   * (the crash signature; equivalent to the documented tail-truncation limit).
+   * Such lines are reported via `truncatedLines`, never silently ignored.
    */
   async verify(): Promise<AuditVerifyReport> {
     if (!(await pathExists(this.filePath))) {
       return { ok: true, records: 0 };
     }
-    const lines = (await readText(this.filePath)).split("\n");
+    const content = await readText(this.filePath);
+    const endsWithNewline = content.endsWith("\n");
+    const lines = content.split("\n");
+    const truncatedLines: number[] = [];
     let prev = { seq: 0, hash: AUDIT_GENESIS_HASH };
     let verified = 0;
     for (let i = 0; i < lines.length; i += 1) {
@@ -257,6 +295,12 @@ export class AuditLedger implements AuditSink {
       const lineNo = i + 1;
       const record = parseRecordLine(line);
       if (!record) {
+        const junkRun = collectJunkRun(lines, i);
+        if (isAbortedAppend(lines, junkRun, prev, endsWithNewline)) {
+          for (const j of junkRun) truncatedLines.push(j + 1);
+          i = junkRun[junkRun.length - 1]!;
+          continue;
+        }
         return brokenReport(verified, lineNo, "malformed record (not a valid ledger line)");
       }
       if (record.seq !== prev.seq + 1) {
@@ -284,7 +328,11 @@ export class AuditLedger implements AuditSink {
       prev = { seq: record.seq, hash: record.hash };
       verified += 1;
     }
-    return { ok: true, records: verified };
+    return {
+      ok: true,
+      records: verified,
+      ...(truncatedLines.length > 0 ? { truncatedLines } : {}),
+    };
   }
 
   /**
@@ -337,6 +385,45 @@ function brokenReport(
   reason: string,
 ): AuditVerifyReport {
   return { ok: false, records, brokenAt: { line, reason } };
+}
+
+/**
+ * Collect the 0-based indices of the contiguous run of non-blank, unparseable
+ * lines starting at `start` (blank lines inside the run are skipped over).
+ */
+function collectJunkRun(lines: string[], start: number): number[] {
+  const run: number[] = [];
+  for (let i = start; i < lines.length; i += 1) {
+    const line = lines[i]!;
+    if (!line.trim()) continue;
+    if (parseRecordLine(line)) break;
+    run.push(i);
+  }
+  return run;
+}
+
+/**
+ * Whether a junk run is a crash-truncated (aborted) append rather than
+ * tampering. True when the next parseable record chains DIRECTLY from the last
+ * verified record (the junk never entered the chain), or when the run trails a
+ * file that ends without a newline — the signature of an interrupted write.
+ * Anything else stays a hard break: excusing it could hide an altered record.
+ */
+function isAbortedAppend(
+  lines: string[],
+  junkRun: number[],
+  prev: { seq: number; hash: string },
+  endsWithNewline: boolean,
+): boolean {
+  const last = junkRun[junkRun.length - 1];
+  if (last === undefined) return false;
+  for (let i = last + 1; i < lines.length; i += 1) {
+    const line = lines[i]!;
+    if (!line.trim()) continue;
+    const next = parseRecordLine(line);
+    return next !== null && next.seq === prev.seq + 1 && next.prev_hash === prev.hash;
+  }
+  return !endsWithNewline;
 }
 
 /** Parse one JSONL line into a record, or null when it is not one. */

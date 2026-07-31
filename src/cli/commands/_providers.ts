@@ -137,5 +137,9 @@ function selectSnowflakeWarehouse(
     ...(settings?.dialect != null ? { dialect: settings.dialect } : {}),
     ...(settings?.maskSensitive != null ? { maskSensitive: settings.maskSensitive } : {}),
     sql: settings?.maxResultRows != null ? { maxResultRows: settings.maxResultRows } : {},
+    // Thread the ledger into the provider so its internal read-only gate and
+    // every spawned statement (health/SHOW/DESCRIBE/EXPLAIN/EDA SQL) are
+    // recorded — not just the tentacle-level queries.
+    ...(audit ? { audit } : {}),
   });
 }

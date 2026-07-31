@@ -20,6 +20,12 @@ import type {
   SnowQueryOutcome,
   SnowRunOptions,
 } from "../../src/tools/snowflake/types.js";
+import {
+  sha256Hex,
+  type AuditData,
+  type AuditEvent,
+  type AuditSink,
+} from "../../src/core/audit/index.js";
 
 /** A fake SnowSpawn that records the argv it was called with and returns canned output. */
 function fakeSpawn(
@@ -371,5 +377,127 @@ describe("SnowflakeWarehouseProvider — read-only gate + redaction", () => {
   it("all advertised capabilities are read-only (write:false)", () => {
     const { provider } = providerWith(() => ok([]));
     expect(provider.capabilities().every((c) => c.write === false)).toBe(true);
+  });
+
+  describe("audit ledger wiring", () => {
+    function memorySink(): {
+      sink: AuditSink;
+      events: Array<{ event: AuditEvent; data: AuditData }>;
+    } {
+      const events: Array<{ event: AuditEvent; data: AuditData }> = [];
+      return {
+        sink: { record: (event, data) => void events.push({ event, data }) },
+        events,
+      };
+    }
+
+    function auditedProvider(handler: (sql: string) => SnowQueryOutcome) {
+      const { sink, events } = memorySink();
+      const { provider, seen } = providerWith(handler, { audit: sink });
+      return { provider, seen, events };
+    }
+
+    it("records metadata traffic (SHOW SCHEMAS) as validated + executed", async () => {
+      const { provider, events } = auditedProvider(() =>
+        ok([{ name: "analytics" }]),
+      );
+      await provider.listSchemas();
+
+      const validated = events.filter((e) => e.event === "sql_validated");
+      const executed = events.filter((e) => e.event === "sql_executed");
+      expect(validated).toHaveLength(1);
+      expect(validated[0]!.data).toMatchObject({ allowed: true, keyword: "SHOW" });
+      expect(executed).toHaveLength(1);
+      expect(executed[0]!.data).toMatchObject({
+        provider: "snowflake",
+        query: "SHOW",
+        ok: true,
+        rows: 1,
+        sql_sha256: sha256Hex("SHOW SCHEMAS"),
+      });
+    });
+
+    it("records the DESCRIBE fallback statements the provider issues itself", async () => {
+      const { provider, events } = auditedProvider((sql) => {
+        if (/information_schema/i.test(sql)) return ok([]);
+        return ok([{ name: "id", type: "NUMBER", "null?": "N" }]);
+      });
+      await provider.describeTable("analytics", "orders");
+
+      const executed = events.filter((e) => e.event === "sql_executed");
+      expect(executed).toHaveLength(2);
+      expect(executed.map((e) => e.data.query)).toEqual(["SELECT", "DESCRIBE"]);
+      expect(executed.every((e) => e.data.ok === true)).toBe(true);
+    });
+
+    it("records the health probe execution", async () => {
+      const { provider, events } = auditedProvider(() => ok([{ "1": 1 }]));
+      await provider.health();
+
+      const executed = events.filter((e) => e.event === "sql_executed");
+      expect(executed).toHaveLength(1);
+      expect(executed[0]!.data).toMatchObject({
+        query: "SELECT",
+        ok: true,
+        // The hash covers the statement actually run: the LIMIT-capped form.
+        sql_sha256: sha256Hex("SELECT 1 LIMIT 100"),
+      });
+    });
+
+    it("records a failed execution with the failure reason", async () => {
+      const { provider, events } = auditedProvider(() => ({
+        ok: false,
+        stdout: "",
+        stderr: "",
+        reason: "connection refused",
+      }));
+      await provider.executeReadOnlySql("SELECT n FROM t LIMIT 5");
+
+      const executed = events.filter((e) => e.event === "sql_executed");
+      expect(executed).toHaveLength(1);
+      expect(executed[0]!.data).toMatchObject({
+        ok: false,
+        error: "connection refused",
+      });
+    });
+
+    it("a blocked statement records a verdict but never an execution", async () => {
+      const { provider, seen, events } = auditedProvider(() => ok([]));
+      const res = await provider.executeReadOnlySql("DELETE FROM customers");
+
+      expect(res.ok).toBe(false);
+      expect(seen).toHaveLength(0);
+      const validated = events.filter((e) => e.event === "sql_validated");
+      expect(validated).toHaveLength(1);
+      expect(validated[0]!.data).toMatchObject({ allowed: false, keyword: "DELETE" });
+      expect(events.some((e) => e.event === "sql_executed")).toBe(false);
+    });
+
+    it("never records raw SQL, identifiers, or result values", async () => {
+      const { provider, events } = auditedProvider((sql) => {
+        if (/information_schema/i.test(sql)) {
+          return ok([
+            {
+              table_name: "orders",
+              column_name: "email",
+              data_type: "TEXT",
+              is_nullable: "YES",
+            },
+          ]);
+        }
+        return ok([{ email: "a@b.com" }]);
+      });
+      await provider.listTables("analytics");
+      await provider.executeReadOnlySql("SELECT email FROM customers");
+
+      expect(events.length).toBeGreaterThan(0);
+      for (const e of events) {
+        const payload = JSON.stringify(e.data);
+        expect(payload).not.toMatch(/FROM\s/i);
+        expect(payload).not.toContain("information_schema");
+        expect(payload).not.toContain("customers");
+        expect(payload).not.toContain("a@b.com");
+      }
+    });
   });
 });

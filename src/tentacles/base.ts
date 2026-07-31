@@ -277,8 +277,11 @@ export async function buildContext(
       maxResultRows: config.policies.warehouse.max_result_rows,
       audit,
     }),
+    // The detector is the LIVE redaction seam (every tentacle/command persists
+    // artifacts through it), so its hits land in the audit ledger too.
     sensitive: new SensitiveFieldDetector({
       enabled: config.policies.privacy.mask_sensitive_values,
+      audit,
     }),
     sanitizer: new ExternalContentSanitizer({ audit }),
     // Same signature as redactArtifactContent, but redaction hits land in the

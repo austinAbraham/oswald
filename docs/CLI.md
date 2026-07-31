@@ -273,7 +273,11 @@ Bundle the ledger for compliance review.
 
 #### `oswald audit verify`
 Walk the hash chain strictly and report the **first broken link** (malformed
-line, sequence gap, `prev_hash` mismatch, or altered record content).
+line, sequence gap, `prev_hash` mismatch, or altered record content). A
+crash-truncated append (a partial line left by a kill/power loss mid-write) is
+classified as an **aborted write**, not a break: the fragment is warned about
+by line number and the chain — which provably continues across it — still
+verifies.
 
 **Writes:** nothing. **Exit:** `0` chain intact (or no ledger yet); `1` broken —
 the report names the line and everything after it should be treated as

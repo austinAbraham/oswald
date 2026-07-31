@@ -214,6 +214,39 @@ describe("audit wiring: buildContext", () => {
   });
 });
 
+describe("audit wiring: live redaction seam", () => {
+  it("records redaction_applied when a tentacle persists an artifact with PII", async () => {
+    const root = await makeTmpDir();
+    const fixture = path.join(root, "ticket.md");
+    await fs.writeFile(
+      fixture,
+      `${TICKET}- Contact jane.doe@example.com with grain questions\n`,
+      "utf8",
+    );
+    const { logger } = captureLogger();
+
+    const outcome = await runTentacleCommand({
+      id: "intake",
+      command: "intake",
+      cwd: root,
+      ticketId: "AE-1",
+      options: { fromFile: fixture },
+      initStateIfMissing: true,
+      logger,
+    });
+    expect(outcome.exitCode).toBe(0);
+
+    const records = await readLedger(root);
+    const redactions = records.filter((r) => r.event === "redaction_applied");
+    expect(redactions.length).toBeGreaterThan(0);
+    for (const r of redactions) {
+      expect(Number(r.data.count)).toBeGreaterThan(0);
+      expect(JSON.stringify(r.data)).not.toContain("jane.doe");
+      expect(JSON.stringify(r.data)).not.toContain("example.com");
+    }
+  });
+});
+
 describe("audit wiring: runTentacleCommand step outcomes", () => {
   it("records a step_outcome with phases, exit code and relative artifact paths", async () => {
     const root = await makeTmpDir();
@@ -337,6 +370,29 @@ describe("audit wiring: provider fallback", () => {
       used: "mock",
       reason: "no connection name configured",
     });
+  });
+
+  it("threads the ledger into the real snowflake provider's read-only gate", async () => {
+    const { sink, events } = memorySink();
+    // `node --version` exits 0, so detection succeeds and the REAL provider is
+    // constructed; the blocked statement below is refused BEFORE any spawn.
+    const providers = selectProviders({
+      cwd: "/tmp",
+      warehouse: "snowflake",
+      snowflake: { connection: "analytics", command: "node" },
+      audit: sink,
+    });
+    expect(providers.warehouse?.name).toBe("snowflake");
+
+    const res = await providers.warehouse!.executeReadOnlySql(
+      "DELETE FROM customers",
+    );
+    expect(res.ok).toBe(false);
+
+    const validated = events.filter((e) => e.event === "sql_validated");
+    expect(validated).toHaveLength(1);
+    expect(validated[0]!.data).toMatchObject({ allowed: false, keyword: "DELETE" });
+    expect(events.some((e) => e.event === "sql_executed")).toBe(false);
   });
 });
 

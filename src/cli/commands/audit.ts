@@ -81,6 +81,11 @@ export function registerAudit(program: Command): void {
       const chain = await ledger.verify();
       if (chain.ok) {
         logger.success(`  chain: intact (${chain.records} records verified)`);
+        if (chain.truncatedLines && chain.truncatedLines.length > 0) {
+          logger.warn(
+            `  crash-truncated append(s) at line(s) ${chain.truncatedLines.join(", ")} — aborted writes, not tampering; those records were lost`,
+          );
+        }
       } else {
         logger.warn(
           `  chain: BROKEN at line ${chain.brokenAt?.line} — ${chain.brokenAt?.reason}`,
@@ -133,6 +138,11 @@ export function registerAudit(program: Command): void {
             ? `audit verify: no ledger records yet (${ledger.relativePath})`
             : `audit verify: chain intact — ${report.records} record(s) verified`,
         );
+        if (report.truncatedLines && report.truncatedLines.length > 0) {
+          logger.warn(
+            `audit verify: crash-truncated append(s) at line(s) ${report.truncatedLines.join(", ")} — aborted writes (the chain continues across them), not tampering`,
+          );
+        }
         process.exitCode = 0;
         return;
       }

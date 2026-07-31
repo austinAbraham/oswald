@@ -65,8 +65,11 @@ diverges from the broader project's earlier (Python-stack) framing.
   redaction/sanitizer hit is appended to `.oswald/audit.jsonl` with a rolling
   hash chain (each record stores `prev_hash` + its own content hash). Ledger
   writes are fail-open — they can never crash a command — while `oswald audit
-  verify` is strict and reports the first broken link. Tail truncation of the
-  file is the one edit the chain alone cannot prove.
+  verify` is strict and reports the first broken link. A crash-truncated
+  append (kill/power loss/ENOSPC mid-write) is isolated onto its own line by
+  the next write and classified by `verify` as an aborted write, distinct from
+  tampering. Tail truncation of the file is the one edit the chain alone
+  cannot prove.
 - **State drives navigation.** A single linear workflow state machine (with a
   recoverable `blocked` side state) powers `oswald next` and the "suggested next
   command" output. The CLI owns ticket identity; tentacles own phase transitions.

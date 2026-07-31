@@ -213,6 +213,78 @@ describe("AuditLedger: verify", () => {
   });
 });
 
+describe("AuditLedger: crash-truncated appends", () => {
+  async function truncateFinalLine(root: string): Promise<void> {
+    const file = path.join(root, ".oswald", AUDIT_LEDGER_FILENAME);
+    const raw = await fs.readFile(file, "utf8");
+    await fs.writeFile(file, raw.slice(0, raw.length - 10), "utf8");
+  }
+
+  it("isolates a partial final line so the next append survives and verifies", async () => {
+    const root = await makeTmpDir();
+    const ledger = makeLedger(root);
+    ledger.record("step_outcome", { command: "intake", exit_code: 0 });
+    ledger.record("step_outcome", { command: "eda", exit_code: 0 });
+    await truncateFinalLine(root);
+
+    makeLedger(root).record("step_outcome", { command: "design", exit_code: 0 });
+
+    const raw = await fs.readFile(
+      path.join(root, ".oswald", AUDIT_LEDGER_FILENAME),
+      "utf8",
+    );
+    const lines = raw.split("\n");
+    const resumed = JSON.parse(lines[2]!) as AuditRecord;
+    expect(resumed.seq).toBe(2);
+    expect(resumed.data.command).toBe("design");
+
+    const report = await makeLedger(root).verify();
+    expect(report.ok).toBe(true);
+    expect(report.records).toBe(2);
+    expect(report.truncatedLines).toEqual([2]);
+  });
+
+  it("classifies a trailing partial line as a truncated write, not a break", async () => {
+    const root = await makeTmpDir();
+    const ledger = makeLedger(root);
+    ledger.record("step_outcome", { command: "intake", exit_code: 0 });
+    ledger.record("step_outcome", { command: "eda", exit_code: 0 });
+    await truncateFinalLine(root);
+
+    const report = await makeLedger(root).verify();
+    expect(report.ok).toBe(true);
+    expect(report.records).toBe(1);
+    expect(report.truncatedLines).toEqual([2]);
+  });
+
+  it("still breaks on junk the chain does not continue across", async () => {
+    const root = await makeTmpDir();
+    const ledger = makeLedger(root);
+    ledger.record("step_outcome", { command: "intake", exit_code: 0 });
+    ledger.record("step_outcome", { command: "clarify", exit_code: 0 });
+    ledger.record("step_outcome", { command: "eda", exit_code: 0 });
+
+    const lines = await readLines(root);
+    await writeLines(root, [lines[0]!, "{corrupted record", lines[2]!]);
+
+    const report = await makeLedger(root).verify();
+    expect(report.ok).toBe(false);
+    expect(report.records).toBe(1);
+    expect(report.brokenAt?.line).toBe(2);
+    expect(report.brokenAt?.reason).toMatch(/malformed record/);
+    expect(report.truncatedLines).toBeUndefined();
+  });
+
+  it("does not report truncated lines for an intact ledger", async () => {
+    const root = await makeTmpDir();
+    const ledger = makeLedger(root);
+    ledger.record("step_outcome", { command: "intake", exit_code: 0 });
+
+    const report = await makeLedger(root).verify();
+    expect(report).toEqual({ ok: true, records: 1 });
+  });
+});
+
 describe("AuditLedger: readAll + export", () => {
   it("readAll returns records and flags malformed lines without throwing", async () => {
     const root = await makeTmpDir();

@@ -90,7 +90,10 @@ Three deterministic, defense-in-depth gates, all exported from `policy/index.ts`
   Decides whether a column name looks like PII (canonical token list:
   `email`, `phone`, `name`, `ssn`, `credit_card`, `token`, …) and redacts
   sensitive values out of rendered artifacts (`[REDACTED]`) before they are
-  persisted. PII-by-name columns are profiled only by aggregate.
+  persisted. PII-by-name columns are profiled only by aggregate. The detector
+  is the live redaction seam — every tentacle/command persists artifacts
+  through it — so each hit is recorded in the audit ledger (counts by kind
+  only, never the redacted values).
 - **`external-content.ts` — `ExternalContentSanitizer`.** The trust boundary for
   untrusted text (tickets, docs, EDA results). `wrap(text, source)` returns a
   clearly delimited, instruction-neutralized block plus a report of detected
@@ -116,10 +119,16 @@ file (`.oswald/audit.jsonl`) where every record carries a rolling hash chain
 it through the small `AuditSink` interface: `ApprovalService` decisions, the
 `SqlSafetyValidator` verdicts (statement hash — never raw SQL), the sanitizer's
 injection detections, redaction hits, provider fallbacks, and every
-`runTentacleCommand` step outcome. Writes are fail-open (a ledger failure warns
-once and never crashes a command); `oswald audit verify` reads strictly and
-reports the first broken link. `buildContext` constructs the ledger with the
-injected clock and threads it everywhere.
+`runTentacleCommand` step outcome. The Snowflake warehouse provider also
+carries the sink, so its internal read-only gate and every statement it spawns
+itself (health probes, `SHOW`/`DESCRIBE`/`information_schema` metadata,
+`EXPLAIN`) land in the ledger — not just the tentacle-level EDA queries.
+Writes are fail-open (a ledger failure warns once and never crashes a
+command); a crash-truncated append is isolated onto its own line by the next
+write, and `oswald audit verify` reads strictly, reporting the first broken
+link while classifying such aborted appends as truncated writes rather than
+tampering. `buildContext` constructs the ledger with the injected clock and
+threads it everywhere.
 
 ### Doctor (`core/doctor`)
 
