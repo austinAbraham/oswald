@@ -27,10 +27,26 @@ export const StateStatusSchema = z.object({
   blockers: z.array(z.string()).default([]),
 });
 
+/**
+ * The recorded readiness scorecard summary (written by intake, consumed by the
+ * clarification readiness gate). `override` records the human decision that
+ * lets the pipeline proceed past a failing gate; re-running intake re-scores
+ * and clears it.
+ */
+export const StateReadinessSchema = z.object({
+  score: z.number().min(0).max(1),
+  failed_dimensions: z.array(z.string()).default([]),
+  override: z
+    .object({ reason: z.string(), at: z.string() })
+    .nullable()
+    .default(null),
+});
+
 export const StateRequirementsSchema = z.object({
   completeness: z.number().min(0).max(1).default(0),
   unresolved_questions: z.array(z.string()).default([]),
   acceptance_criteria_found: z.boolean().default(false),
+  readiness: StateReadinessSchema.nullable().default(null),
 });
 
 export const StatePolicySchema = z.object({
@@ -62,6 +78,7 @@ export type ToolStatus = z.infer<typeof ToolStatusSchema>;
 export type StateProject = z.infer<typeof StateProjectSchema>;
 export type StateTicket = z.infer<typeof StateTicketSchema>;
 export type StateStatus = z.infer<typeof StateStatusSchema>;
+export type StateReadiness = z.infer<typeof StateReadinessSchema>;
 export type StateRequirements = z.infer<typeof StateRequirementsSchema>;
 export type StatePolicy = z.infer<typeof StatePolicySchema>;
 export type StateTimestamps = z.infer<typeof StateTimestampsSchema>;

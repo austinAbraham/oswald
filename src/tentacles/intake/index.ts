@@ -9,7 +9,14 @@
  *   - intake.md            — the ticket brief (summary, data product, evidence)
  *   - requirements.md      — extracted requirements + missing-requirement flags
  *   - acceptance_criteria.md — parsed acceptance criteria + reconciliation notes
+ *   - readiness.md         — the dimension-by-dimension readiness scorecard
  * and advances `.oswald/state.yml` to the `intake` phase.
+ *
+ * The readiness scorecard is INFORMATIONAL here: intake always proceeds. The
+ * score (+ failed dimensions) is recorded in `state.requirements.readiness`
+ * and gated at the clarification step when `policies.readiness.min_score` is
+ * configured. Re-running intake re-scores, reports the delta against the
+ * previous run, and clears any recorded readiness override.
  *
  * ALL ticket content is UNTRUSTED. It is wrapped via the sanitizer (so injection
  * attempts are neutralized + reported) and treated as evidence, never as
@@ -27,6 +34,7 @@ import {
   advanceWorkflow,
 } from "../base.js";
 import type { Ticket } from "../../tools/index.js";
+import { ARTIFACT_FILES } from "../../core/artifacts/index.js";
 import {
   splitSections,
   summarizeAsk,
@@ -39,12 +47,20 @@ import {
   detectDueDate,
   detectDependencies,
   detectMetricAmbiguity,
+  detectVagueTerms,
+  detectGrainDeclaration,
 } from "./parse.js";
+import {
+  scoreReadiness,
+  renderReadinessTable,
+  type ReadinessScorecard,
+} from "./readiness.js";
 
 export const ARTIFACT_NAMES = {
   brief: "intake.md",
   requirements: "requirements.md",
   acceptance: "acceptance_criteria.md",
+  readiness: ARTIFACT_FILES.readiness,
 } as const;
 
 // --- I/O schemas -----------------------------------------------------------
@@ -72,6 +88,12 @@ export const IntakeOutputSchema = z.object({
   dependencies: z.array(z.string()),
   openQuestions: z.array(z.string()),
   completeness: z.number().min(0).max(1),
+  /** Weighted readiness score from the dimension-by-dimension scorecard. */
+  readinessScore: z.number().min(0).max(1),
+  /** Readiness dimensions that failed (canonical dimension ids). */
+  readinessFailedDimensions: z.array(z.string()),
+  /** Score change vs. the previous run (null on the first scoring run). */
+  readinessDelta: z.number().nullable(),
   injectionDetected: z.boolean(),
 });
 export type IntakeOutput = z.infer<typeof IntakeOutputSchema>;
@@ -162,6 +184,7 @@ export const intakeTentacle: Tentacle<
     "Acceptance criteria parsed (or flagged missing)",
     "Metric/grain ambiguity surfaced as open questions",
     "Due dates and dependencies captured",
+    "Readiness scored dimension-by-dimension (informational; gated at clarify)",
     "All untrusted ticket content wrapped and injection-scanned",
     "Every unsourced business rule tagged assumption/open_question",
   ],
@@ -202,6 +225,8 @@ export const intakeTentacle: Tentacle<
     const dueDate = detectDueDate(parseText);
     const dependencies = detectDependencies(sections, parseText);
     const ambiguity = detectMetricAmbiguity(parseText);
+    const vagueTerms = detectVagueTerms(parseText);
+    const grain = detectGrainDeclaration(parseText);
 
     // --- Open questions (gating). -----------------------------------------
     const openQuestions: string[] = [...ambiguity];
@@ -257,6 +282,14 @@ export const intakeTentacle: Tentacle<
     }
     evidence.push(
       markEvidence(
+        "grain",
+        grain ?? "not declared",
+        grain ? "inferred" : "open_question",
+        grain ? "ticket text" : "—",
+      ),
+    );
+    evidence.push(
+      markEvidence(
         "due_date",
         dueDate ?? "none stated",
         dueDate ? "confirmed" : "open_question",
@@ -273,6 +306,25 @@ export const intakeTentacle: Tentacle<
       hasTargets: targets.length > 0,
     });
 
+    // --- Readiness scorecard (dimension-by-dimension, deterministic). ------
+    // Informational at intake time; the clarification step gates on it when
+    // `policies.readiness.min_score` is configured. Re-running intake
+    // re-scores and reports the delta against the previously recorded score.
+    const readiness = scoreReadiness({
+      grain,
+      sourceSystems,
+      acceptanceCriteria,
+      targets,
+      stakeholders,
+      undefinedTerms: vagueTerms,
+      dueDate,
+    });
+    const previousReadiness = ctx.state.requirements.readiness;
+    const readinessDelta =
+      previousReadiness === null
+        ? null
+        : Math.round((readiness.score - previousReadiness.score) * 100) / 100;
+
     // --- Render + persist artifacts (redacting PII). ----------------------
     const written: string[] = [];
 
@@ -286,6 +338,7 @@ export const intakeTentacle: Tentacle<
             `- **ID:** ${ticket.id}`,
             `- **Source:** ${ticket.source}`,
             `- **Completeness:** ${(completeness * 100).toFixed(0)}%`,
+            `- **Readiness:** ${(readiness.score * 100).toFixed(0)}% (see ${ARTIFACT_NAMES.readiness})`,
             `- **Injection scan:** ${
               injectionDetected ? "⚠ patterns detected (neutralized)" : "clean"
             }`,
@@ -362,11 +415,20 @@ export const intakeTentacle: Tentacle<
       ],
     });
 
+    const readinessMd = renderReadinessDoc(ctx, {
+      title,
+      readiness,
+      previousScore: previousReadiness?.score ?? null,
+      readinessDelta,
+      minScore: ctx.config.policies.readiness.min_score,
+    });
+
     // Redact any PII that leaked into the rendered artifacts before writing.
     for (const [name, md] of [
       [ARTIFACT_NAMES.brief, briefMd],
       [ARTIFACT_NAMES.requirements, reqMd],
       [ARTIFACT_NAMES.acceptance, acMd],
+      [ARTIFACT_NAMES.readiness, readinessMd],
     ] as const) {
       const { content } = ctx.policy.sensitive.redactArtifactContent(md);
       const path = await ctx.artifacts.write(name, content);
@@ -383,11 +445,20 @@ export const intakeTentacle: Tentacle<
         intake: ARTIFACT_NAMES.brief,
         requirements: ARTIFACT_NAMES.requirements,
         acceptance_criteria: ARTIFACT_NAMES.acceptance,
+        readiness: ARTIFACT_NAMES.readiness,
       },
       requirements: {
         completeness,
         unresolved_questions: openQuestions,
         acceptance_criteria_found: acceptanceCriteria.length > 0,
+        // Re-scoring deliberately clears any prior readiness override: an
+        // override was a decision about the OLD scorecard, never a standing
+        // exemption.
+        readiness: {
+          score: readiness.score,
+          failed_dimensions: readiness.failedDimensions,
+          override: null,
+        },
       },
     });
 
@@ -404,15 +475,22 @@ export const intakeTentacle: Tentacle<
       dependencies,
       openQuestions,
       completeness,
+      readinessScore: readiness.score,
+      readinessFailedDimensions: readiness.failedDimensions,
+      readinessDelta,
       injectionDetected,
     });
+    const deltaNote =
+      readinessDelta === null
+        ? ""
+        : ` (Δ ${readinessDelta >= 0 ? "+" : ""}${(readinessDelta * 100).toFixed(0)}%)`;
     ctx.logger.info(
-      `intake: ${title} — completeness ${(completeness * 100).toFixed(0)}%, ${openQuestions.length} open question(s)`,
+      `intake: ${title} — completeness ${(completeness * 100).toFixed(0)}%, readiness ${(readiness.score * 100).toFixed(0)}%${deltaNote}, ${openQuestions.length} open question(s)`,
     );
 
     return {
       artifactsWritten: written,
-      summary: `Intake brief for "${title}" (${(completeness * 100).toFixed(0)}% complete, ${openQuestions.length} open question(s)).`,
+      summary: `Intake brief for "${title}" (${(completeness * 100).toFixed(0)}% complete, readiness ${(readiness.score * 100).toFixed(0)}%${deltaNote}, ${openQuestions.length} open question(s)).`,
       output,
       ...(openQuestions.length ? { openQuestions } : {}),
       ...(warnings.length ? { warnings } : {}),
@@ -422,6 +500,59 @@ export const intakeTentacle: Tentacle<
 
 function truncate(s: string, n: number): string {
   return s.length <= n ? s : `${s.slice(0, n - 1)}…`;
+}
+
+/** Render the readiness scorecard artifact (`readiness.md`). */
+function renderReadinessDoc(
+  ctx: TentacleContext,
+  args: {
+    title: string;
+    readiness: ReadinessScorecard;
+    previousScore: number | null;
+    readinessDelta: number | null;
+    minScore: number | null;
+  },
+): string {
+  const { title, readiness, previousScore, readinessDelta, minScore } = args;
+  const pct = (v: number): string => (v * 100).toFixed(0);
+
+  const failed = readiness.dimensions.filter((d) => !d.passed);
+  const gapsBody =
+    failed.length === 0
+      ? "_All dimensions ready — no missing information._"
+      : failed.map((d) => `- **${d.label}:** ${d.question}`).join("\n");
+
+  const deltaBody =
+    previousScore === null || readinessDelta === null
+      ? "_First scoring run — no previous score to compare._"
+      : `Previous score ${pct(previousScore)}% → current ${pct(readiness.score)}% (Δ ${
+          readinessDelta >= 0 ? "+" : ""
+        }${pct(readinessDelta)}%).`;
+
+  const gateBody = [
+    `- **Configured minimum (\`policies.readiness.min_score\`):** ${
+      minScore === null ? "none — scorecard is informational only" : `${pct(minScore)}%`
+    }`,
+    "- **Gate check:** applies at the clarification step (`oswald clarify`); intake never blocks.",
+    ...(minScore !== null && readiness.score < minScore
+      ? [
+          `- **Current standing:** ${pct(readiness.score)}% is BELOW the required ${pct(minScore)}% — \`oswald clarify\` will land blocked unless the missing information is provided or a human override is recorded.`,
+        ]
+      : []),
+  ].join("\n");
+
+  return ctx.artifacts.renderMarkdown({
+    title: `Readiness Scorecard: ${title}`,
+    summary: `Readiness ${pct(readiness.score)}% — ${
+      readiness.dimensions.length - failed.length
+    }/${readiness.dimensions.length} dimension(s) ready.`,
+    sections: [
+      { heading: "Scorecard", body: renderReadinessTable(readiness) },
+      { heading: "Missing Information", body: gapsBody },
+      { heading: "Readiness Delta", body: deltaBody },
+      { heading: "Gate", body: gateBody },
+    ],
+  });
 }
 
 function score(flags: {

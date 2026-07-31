@@ -233,17 +233,34 @@ const VAGUE_TERMS = [
 ];
 
 export function detectMetricAmbiguity(text: string): string[] {
+  return detectVagueTerms(text).map(
+    (term) =>
+      `Term "${term}" is used but not defined — needs an explicit definition (formula / grain / filter).`,
+  );
+}
+
+/** The bare vague terms present in a body of text (deterministic order). */
+export function detectVagueTerms(text: string): string[] {
   const lower = text.toLowerCase();
-  const flags: string[] = [];
+  const hits: string[] = [];
   for (const term of VAGUE_TERMS) {
     const re = new RegExp(`\\b${term}\\b`, "i");
-    if (re.test(lower)) {
-      flags.push(
-        `Term "${term}" is used but not defined — needs an explicit definition (formula / grain / filter).`,
-      );
-    }
+    if (re.test(lower)) hits.push(term);
   }
-  return flags;
+  return hits;
+}
+
+/**
+ * Detect an explicit grain declaration. Conservative: matches only the two
+ * unambiguous phrasings — "one row per <thing>" and "grain: <phrase>" — and
+ * returns the raw declared phrase, or null when no grain is declared.
+ */
+export function detectGrainDeclaration(text: string): string | null {
+  const rowPer = text.match(/\bone (?:row|record) per\s+([^\n.;]+)/i);
+  if (rowPer) return `one row per ${rowPer[1]!.trim()}`;
+  const labeled = text.match(/\bgrain\b\s*[:=—-]\s*([^\n.;]+)/i);
+  if (labeled) return labeled[1]!.trim();
+  return null;
 }
 
 /** Produce a deterministic one-paragraph business-ask summary. */

@@ -8,7 +8,9 @@
 export const ARTIFACT_FILES = {
   state: "state.yml",
   intake: "intake.md",
+  readiness: "readiness.md",
   clarifications: "clarifications.md",
+  missingInfoRequest: "missing_information_request.md",
   context: "context.md",
   eda: "eda.md",
   design: "design.md",

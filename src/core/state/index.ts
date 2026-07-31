@@ -6,6 +6,7 @@ export {
   type StateProject,
   type StateTicket,
   type StateStatus,
+  type StateReadiness,
   type StateRequirements,
   type StatePolicy,
   type StateTimestamps,

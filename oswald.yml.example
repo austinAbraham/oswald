@@ -75,3 +75,10 @@ policies:
   privacy:
     mask_sensitive_values: true
     pii_allowed_in_artifacts: false
+  # Ticket readiness gate. Intake always writes a dimension-by-dimension
+  # readiness scorecard (readiness.md); `min_score` (0..1) additionally GATES
+  # the clarification step: below it, `oswald clarify` lands blocked (exit 2)
+  # and auto-drafts a missing-information request for the failed dimensions.
+  # Unset (the default) = no gating; the scorecard stays informational.
+  # readiness:
+  #   min_score: 0.7

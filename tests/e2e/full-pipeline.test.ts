@@ -113,6 +113,7 @@ describe("E2E: full pipeline on the sample retention ticket", () => {
       "intake.md",
       "requirements.md",
       "acceptance_criteria.md",
+      "readiness.md",
       // clarify
       "open_questions.md",
       "scope_risks.md",
