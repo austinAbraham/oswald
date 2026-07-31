@@ -12,7 +12,8 @@ The binary is `oswald` (see `package.json` `bin`). When it is not on `PATH`, use
 - **Artifacts** land under the configured artifact dir (default `.oswald/`).
   Filenames are canonical (`src/core/artifacts/names.ts`) — see
   [Artifacts](#artifacts).
-- **State** lives in `.oswald/state.yml`; the audit trail in `.oswald/audit.log`.
+- **State** lives in `.oswald/state.yml`; the audit trail in `.oswald/audit.jsonl`
+  — an append-only, hash-chained JSONL ledger (see [`oswald audit`](#oswald-audit)).
 - **Consent flags are never defaults.** Writes are default-deny; a `--yes` /
   `--post` / `--open` / `--apply` is required, and `--draft` always forces
   draft-only. See [SECURITY_MODEL.md](./SECURITY_MODEL.md#approval-gates).
@@ -28,9 +29,10 @@ a uniform contract:
 | `1`  | hard error — the command threw, an unknown tentacle, or a precondition failed |
 | `2`  | **blocked** — the workflow landed in `blocked` (e.g. a validation gate failed). Not a crash; artifacts are still written, but the non-zero code halts automation. |
 
-Operator commands (`doctor`, `ship`, `compact`, `next`, `init`) use `0`/`1`
-(`doctor` returns `1` on any fail-status check; `ship`/`compact` return `1` on a
-precondition failure).
+Operator commands (`doctor`, `ship`, `compact`, `audit`, `next`, `init`) use
+`0`/`1` (`doctor` returns `1` on any fail-status check; `ship`/`compact` return
+`1` on a precondition failure; `audit verify` returns `1` on a broken hash
+chain).
 
 ---
 
@@ -243,6 +245,41 @@ the context-rot-resistance maintenance step.
 **Writes:** a compacted context summary; archives intermediates. **Exit:** `0` /
 `1`.
 
+### `oswald audit`
+Inspect the persistent, tamper-evident audit ledger (`.oswald/audit.jsonl`).
+Every approval decision, pipeline step outcome, SQL validation/execution
+(statement **hash** — never raw SQL), provider fallback, and redaction/sanitizer
+hit is appended as one JSON line carrying a rolling hash chain (`prev_hash` +
+its own content hash). Ledger writes are fail-open (they never crash a
+command); reading back is strict.
+
+| Option | Description |
+|--------|-------------|
+| `-n, --tail <n>` | number of recent records to show (default `20`) |
+| `-C, --cwd <dir>` | project root |
+
+Without a subcommand it prints a readable summary: record counts by event type,
+chain status, and the most recent records. **Writes:** nothing. **Exit:** `0`.
+
+#### `oswald audit export`
+Bundle the ledger for compliance review.
+
+| Option | Description |
+|--------|-------------|
+| `--format <format>` | `json` (records + chain verification result) or `csv`; default `json` |
+| `--out <file>` | write to a file instead of stdout |
+
+**Writes:** only the `--out` file, when given. **Exit:** `0` / `1` (export failure).
+
+#### `oswald audit verify`
+Walk the hash chain strictly and report the **first broken link** (malformed
+line, sequence gap, `prev_hash` mismatch, or altered record content).
+
+**Writes:** nothing. **Exit:** `0` chain intact (or no ledger yet); `1` broken —
+the report names the line and everything after it should be treated as
+untrusted. (Truncating the tail of the file is the one edit a hash chain alone
+cannot prove; anchor the latest hash externally if you need that.)
+
 ---
 
 ## Artifacts
@@ -263,4 +300,4 @@ Canonical filenames written under the artifact dir (default `.oswald/`):
 | pr | `pr.md` |
 | update-ticket | `ticket-update.md` |
 | ship | `ship.md` |
-| audit log | `audit.log` |
+| audit ledger | `audit.jsonl` |

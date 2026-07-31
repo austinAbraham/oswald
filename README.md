@@ -266,6 +266,7 @@ stays green offline. `oswald doctor` reports whether `snow` was detected.
 | `update-ticket <ticket>` | Write results back to the ticket; `--draft` (default) or `--post --yes`. |
 | `ship <ticket>` | Finalize: verify validation + PR summary, archive intermediates, mark `shipped`. |
 | `compact` | Summarize artifacts into `current_context.md`; archive noisy intermediates. |
+| `audit` | Inspect the tamper-evident audit ledger (`.oswald/audit.jsonl`); `export --format json\|csv`, `verify` walks the hash chain. |
 | `next` | Show (or `--run`) the recommended next command from state. |
 
 Every command accepts `-C, --cwd <dir>` to set the project root.

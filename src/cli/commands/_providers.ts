@@ -22,6 +22,7 @@ import {
 } from "../../tools/providers/mock/index.js";
 import { SnowflakeWarehouseProvider, detectSnow } from "../../tools/snowflake/index.js";
 import type { TentacleProviders } from "../../tentacles/base.js";
+import type { AuditSink } from "../../core/audit/index.js";
 import { logger } from "../../core/logging/index.js";
 
 /**
@@ -60,6 +61,8 @@ export interface ProviderSelection {
   ticketFixture?: string | undefined;
   /** Settings for the real Snowflake path (used when `warehouse === "snowflake"`). */
   snowflake?: SnowflakeSettings | undefined;
+  /** Optional audit sink; provider fallbacks are recorded when present. */
+  audit?: AuditSink | undefined;
 }
 
 /**
@@ -79,7 +82,7 @@ export function selectProviders(sel: ProviderSelection): TentacleProviders {
   if (sel.warehouse === "mock") {
     providers.warehouse = new MockWarehouseProvider();
   } else if (sel.warehouse === "snowflake") {
-    providers.warehouse = selectSnowflakeWarehouse(sel.snowflake);
+    providers.warehouse = selectSnowflakeWarehouse(sel.snowflake, sel.audit);
   }
   if (sel.repo) {
     providers.repo = new MockRepoProvider({ cwd: sel.cwd });
@@ -100,13 +103,23 @@ export function selectProviders(sel: ProviderSelection): TentacleProviders {
  */
 function selectSnowflakeWarehouse(
   settings: SnowflakeSettings | undefined,
+  audit?: AuditSink,
 ): SnowflakeWarehouseProvider | MockWarehouseProvider {
+  const fallback = (reason: string): MockWarehouseProvider => {
+    audit?.record("provider_fallback", {
+      provider: "warehouse",
+      requested: "snowflake",
+      used: "mock",
+      reason,
+    });
+    return new MockWarehouseProvider();
+  };
   const connection = settings?.connection?.trim();
   if (!connection) {
     logger.warn(
       "warehouse 'snowflake' requested but no connection name is configured; falling back to the mock warehouse (dry-run-safe). Set warehouse.connection in oswald.yml or pass --connection.",
     );
-    return new MockWarehouseProvider();
+    return fallback("no connection name configured");
   }
   const detection = detectSnow(settings?.command);
   if (!detection.available) {
@@ -115,7 +128,7 @@ function selectSnowflakeWarehouse(
         settings?.command ?? "snow"
       }' CLI was not found on PATH; falling back to the mock warehouse. Install the Snowflake CLI and configure a non-interactive connection to run real EDA.`,
     );
-    return new MockWarehouseProvider();
+    return fallback("snow CLI not found on PATH");
   }
   return new SnowflakeWarehouseProvider({
     connection,

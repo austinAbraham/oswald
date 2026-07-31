@@ -106,6 +106,6 @@ describe("artifacts: canonical names", () => {
   it("exposes the full filename set", () => {
     expect(ARTIFACT_FILENAMES).toContain("intake.md");
     expect(ARTIFACT_FILENAMES).toContain("validation.md");
-    expect(ARTIFACT_FILENAMES).toContain("audit.log");
+    expect(ARTIFACT_FILENAMES).toContain("audit.jsonl");
   });
 });

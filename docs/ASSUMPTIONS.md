@@ -58,10 +58,15 @@ diverges from the broader project's earlier (Python-stack) framing.
 
   Plus `state.yml` for lifecycle state. The full filename→key map for the
   current run is recorded in `state.yml` under `artifacts:`.
-- **Audit trail is currently console-only.** Every command logs structured,
-  prefixed lines (`[oswald]`, `[oswald:ok]`, `[oswald:warn]`, `[oswald:error]`)
-  to stdout/stderr. A persisted `audit.log` file is **not** written in this tier;
-  the `audit` key reserved in `ARTIFACT_FILES` is a forward-looking placeholder.
+- **Audit trail is persisted and tamper-evident.** Beyond the structured,
+  prefixed console lines (`[oswald]`, `[oswald:ok]`, `[oswald:warn]`,
+  `[oswald:error]`), every approval decision, step outcome, SQL
+  validation/execution (statement hash — never raw SQL), provider fallback, and
+  redaction/sanitizer hit is appended to `.oswald/audit.jsonl` with a rolling
+  hash chain (each record stores `prev_hash` + its own content hash). Ledger
+  writes are fail-open — they can never crash a command — while `oswald audit
+  verify` is strict and reports the first broken link. Tail truncation of the
+  file is the one edit the chain alone cannot prove.
 - **State drives navigation.** A single linear workflow state machine (with a
   recoverable `blocked` side state) powers `oswald next` and the "suggested next
   command" output. The CLI owns ticket identity; tentacles own phase transitions.

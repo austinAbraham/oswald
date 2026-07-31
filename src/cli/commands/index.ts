@@ -14,6 +14,7 @@ import { registerPr } from "./pr.js";
 import { registerUpdateTicket } from "./update-ticket.js";
 import { registerShip } from "./ship.js";
 import { registerCompact } from "./compact.js";
+import { registerAudit } from "./audit.js";
 
 /**
  * Register every CLI command onto the program, in workflow order.
@@ -42,5 +43,6 @@ export function registerCommands(program: Command): void {
 
   // Maintenance + navigation.
   registerCompact(program);
+  registerAudit(program);
   registerNext(program);
 }

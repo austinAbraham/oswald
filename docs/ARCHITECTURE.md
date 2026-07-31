@@ -8,7 +8,7 @@ never opens a network connection in normal operation.**
 ```
 src/
   cli/          # Commander program + one file per command
-  core/         # the engine: config, state, artifacts, workflow, policy, approvals, doctor, logging
+  core/         # the engine: config, state, artifacts, workflow, policy, approvals, audit, doctor, logging
   tentacles/    # the eight pipeline modules + shared base/registry
   tools/        # provider abstraction (mock impls today; MCP seam for later)
   runtimes/     # runtime adapters (generic / claude-code / codex / gemini-cli / cursor / windsurf)
@@ -107,6 +107,19 @@ Action classes: `ticket_update`, `create_ticket`, `create_branch`, `commit`,
 `push`, `open_pull_request`, `execute_write_sql`, `write_external_document`,
 with alias mapping so either config vocabulary works. `policyFromConfig` adapts
 the config `policies` block to an `ApprovalPolicy`.
+
+### Audit (`core/audit`)
+
+`AuditLedger` is the persistent, tamper-evident trail: an append-only JSONL
+file (`.oswald/audit.jsonl`) where every record carries a rolling hash chain
+(`prev_hash` + its own content hash, genesis = 64 zeros). The gates report into
+it through the small `AuditSink` interface: `ApprovalService` decisions, the
+`SqlSafetyValidator` verdicts (statement hash — never raw SQL), the sanitizer's
+injection detections, redaction hits, provider fallbacks, and every
+`runTentacleCommand` step outcome. Writes are fail-open (a ledger failure warns
+once and never crashes a command); `oswald audit verify` reads strictly and
+reports the first broken link. `buildContext` constructs the ledger with the
+injected clock and threads it everywhere.
 
 ### Doctor (`core/doctor`)
 
