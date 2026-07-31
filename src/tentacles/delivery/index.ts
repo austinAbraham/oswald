@@ -54,15 +54,14 @@ export const ARTIFACT_NAMES = {
 } as const;
 
 /**
- * Upstream artifacts this tentacle reads (best-effort → degrade gracefully).
- * Each entry is a fallback CHAIN: the FIRST existing filename wins. The
- * validation tentacle writes `validation_report.md` and planning writes
- * `implementation_plan.md`; the second names are legacy fallbacks.
+ * Upstream artifacts this tentacle reads (primary names; legacy fallbacks are
+ * handled at the read site). Mirrored by the drift checker's consumption-edge
+ * table (kept aligned by a unit test).
  */
 export const INPUT_ARTIFACTS = {
-  validation: ["validation_report.md", "validation.md"],
-  plan: ["implementation_plan.md", "plan.md"],
-  requirements: ["requirements.md"],
+  validation: "validation_report.md",
+  plan: "implementation_plan.md",
+  requirements: "requirements.md",
 } as const;
 
 // --- I/O schemas -----------------------------------------------------------
@@ -114,18 +113,6 @@ async function readArtifactIfExists(
 ): Promise<string | null> {
   if (await ctx.artifacts.exists(name)) {
     return ctx.artifacts.read(name);
-  }
-  return null;
-}
-
-/** Read the first existing artifact from a fallback chain (null when none). */
-async function readFirstExisting(
-  ctx: TentacleContext,
-  names: readonly string[],
-): Promise<string | null> {
-  for (const name of names) {
-    const body = await readArtifactIfExists(ctx, name);
-    if (body !== null) return body;
   }
   return null;
 }
@@ -220,18 +207,27 @@ export const deliveryTentacle: Tentacle<
     const ticketId = input.ticketId ?? ctx.ticketId ?? null;
 
     // --- Gather + neutralize upstream artifacts (UNTRUSTED). --------------
-    // Read the artifacts the upstream tentacles actually emit, via the
-    // `INPUT_ARTIFACTS` fallback chains (first existing filename wins).
-    const rawValidation = await readFirstExisting(ctx, INPUT_ARTIFACTS.validation);
-    const rawPlan = await readFirstExisting(ctx, INPUT_ARTIFACTS.plan);
-    const rawRequirements = await readFirstExisting(
+    // Read the artifacts the upstream tentacles actually emit. The validation
+    // tentacle writes `validation_report.md` (falling back to the legacy
+    // `validation.md` name if present); planning writes `implementation_plan.md`.
+    const rawValidation =
+      (await readArtifactIfExists(ctx, INPUT_ARTIFACTS.validation)) ??
+      (await readArtifactIfExists(ctx, "validation.md"));
+    const rawPlan =
+      (await readArtifactIfExists(ctx, INPUT_ARTIFACTS.plan)) ??
+      (await readArtifactIfExists(ctx, "plan.md"));
+    const rawRequirements = await readArtifactIfExists(
       ctx,
       INPUT_ARTIFACTS.requirements,
     );
 
-    const validation = neutralize(ctx, rawValidation, "validation_report.md");
-    const plan = neutralize(ctx, rawPlan, "implementation_plan.md");
-    const requirements = neutralize(ctx, rawRequirements, "requirements.md");
+    const validation = neutralize(ctx, rawValidation, INPUT_ARTIFACTS.validation);
+    const plan = neutralize(ctx, rawPlan, INPUT_ARTIFACTS.plan);
+    const requirements = neutralize(
+      ctx,
+      rawRequirements,
+      INPUT_ARTIFACTS.requirements,
+    );
 
     const injectionDetected =
       validation.detected || plan.detected || requirements.detected;

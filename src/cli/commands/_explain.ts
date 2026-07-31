@@ -131,37 +131,40 @@ const TICKET_COMMANDS = new Set([
 
 // --- Input groups, derived from the consumers' exported constants. ----------
 
-/** Filenames the intake step writes (the only upstream most steps consume). */
+/** Filenames the intake step writes (the upstream most steps consume). */
 const INTAKE_WRITE_SET = new Set<string>(Object.values(INTAKE_FILES));
+/** Filenames the context step writes. */
+const CONTEXT_WRITE_SET = new Set<string>(Object.values(CONTEXT_FILES));
+/** Filenames the eda step writes. */
+const EDA_WRITE_SET = new Set<string>(Object.values(EDA_FILES));
 
 /** The subset of `names` that intake produces, preserving read order. */
 function producedByIntake(names: readonly string[]): readonly string[] {
   return names.filter((n) => INTAKE_WRITE_SET.has(n));
 }
 
-/** The subset of `names` that NO pipeline step produces, preserving order. */
-function producedByNobody(names: readonly string[]): readonly string[] {
-  return names.filter((n) => !INTAKE_WRITE_SET.has(n));
-}
-
-/** Delivery backs both `pr` and `update-ticket`; both read the same inputs. */
+/**
+ * Delivery backs both `pr` and `update-ticket`; both read the same inputs.
+ * The primary names come from delivery's `INPUT_ARTIFACTS`; the second name in
+ * each chain mirrors the legacy fallback its read site still accepts.
+ */
 const DELIVERY_READS: StepInput[] = [
   {
     label: "validation evidence",
     producedBy: "validate",
-    names: DELIVERY_INPUTS.validation,
+    names: [DELIVERY_INPUTS.validation, "validation.md"],
     mode: "first",
   },
   {
     label: "implementation plan",
     producedBy: "plan",
-    names: DELIVERY_INPUTS.plan,
+    names: [DELIVERY_INPUTS.plan, "plan.md"],
     mode: "first",
   },
   {
     label: "requirements",
     producedBy: "intake",
-    names: DELIVERY_INPUTS.requirements,
+    names: [DELIVERY_INPUTS.requirements],
     mode: "each",
   },
 ];
@@ -263,26 +266,35 @@ const STEP_SPECS: Record<string, StepSpec> = {
         mode: "each",
       },
       {
-        label: "extra design sources (legacy names)",
-        producedBy: null,
-        names: producedByNobody(DESIGN_INPUTS),
+        label: "context pack",
+        producedBy: "context",
+        names: DESIGN_INPUTS.filter((n) => CONTEXT_WRITE_SET.has(n)),
+        mode: "each",
+      },
+      {
+        label: "eda profile",
+        producedBy: "eda",
+        names: DESIGN_INPUTS.filter((n) => EDA_WRITE_SET.has(n)),
         mode: "each",
       },
     ],
     writes: Object.values(DESIGN_FILES),
     sideEffects: [],
-    notes: [
-      "'oswald eda' writes eda_report.md, which design does NOT read — EDA findings reach the design only via a hand-written eda.md today",
-    ],
   },
   plan: {
     tentacleId: "planning",
     purpose: "plan layered dbt models + tests and an intended-changes manifest",
     reads: [
       {
-        label: "design/eda summaries (legacy names)",
-        producedBy: null,
-        names: producedByNobody(Object.values(PLANNING_INPUTS)),
+        label: "design outputs",
+        producedBy: "design",
+        names: [PLANNING_INPUTS.design],
+        mode: "each",
+      },
+      {
+        label: "eda profile",
+        producedBy: "eda",
+        names: [PLANNING_INPUTS.eda],
         mode: "each",
       },
       {
@@ -295,7 +307,7 @@ const STEP_SPECS: Record<string, StepSpec> = {
     writes: Object.values(PLANNING_FILES),
     sideEffects: [],
     notes: [
-      "'oswald design' writes metric_spec.yml/semantic_model_plan.md, which plan does NOT read — without a hand-written design.md the plan derives from the intake artifacts (and warns)",
+      "'oswald design' also writes metric_spec.yml and dimension_contracts.yml, which plan does not read — semantic_model_plan.md is the design→plan handoff",
     ],
   },
   build: {

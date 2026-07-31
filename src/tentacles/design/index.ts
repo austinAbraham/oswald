@@ -53,14 +53,18 @@ export const ARTIFACT_NAMES = {
   dimensionContracts: "dimension_contracts.yml",
 } as const;
 
-/** Upstream artifacts this tentacle reads (all optional → degrade gracefully). */
+/**
+ * Upstream artifacts this tentacle reads (all optional → degrade gracefully).
+ * Filenames match what the upstream tentacles ACTUALLY write (their
+ * `ARTIFACT_NAMES`); the drift checker's consumption-edge table mirrors this
+ * list, and a unit test keeps the two aligned.
+ */
 export const INPUT_ARTIFACTS = [
   "requirements.md",
   "acceptance_criteria.md",
   "intake.md",
-  "clarifications.md",
-  "context.md",
-  "eda.md",
+  "context_pack.md",
+  "eda_report.md",
 ] as const;
 
 // --- I/O schemas -----------------------------------------------------------

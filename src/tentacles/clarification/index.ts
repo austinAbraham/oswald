@@ -66,6 +66,16 @@ export const INTAKE_ARTIFACTS = {
   acceptance: "acceptance_criteria.md",
 } as const;
 
+/**
+ * Upstream artifacts this tentacle reads. Mirrored by the drift checker's
+ * consumption-edge table (kept aligned by a unit test).
+ */
+export const INPUT_ARTIFACTS = [
+  INTAKE_ARTIFACTS.brief,
+  INTAKE_ARTIFACTS.requirements,
+  INTAKE_ARTIFACTS.acceptance,
+] as const;
+
 // --- I/O schemas -----------------------------------------------------------
 
 export const ClarificationInputSchema = z.object({

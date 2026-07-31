@@ -139,7 +139,7 @@ describe("design tentacle: well-specified upstream artifacts", () => {
     const root = await makeTmpDir();
     await seedArtifacts(root, {
       "requirements.md": GOOD_REQUIREMENTS,
-      "eda.md": EDA_NOTES,
+      "eda_report.md": EDA_NOTES,
     });
 
     const ctx = await buildContext({
@@ -180,7 +180,7 @@ describe("design tentacle: well-specified upstream artifacts", () => {
 
   it("renders valid YAML with assumption/open_question tags (never invents logic)", async () => {
     const root = await makeTmpDir();
-    await seedArtifacts(root, { "requirements.md": GOOD_REQUIREMENTS, "eda.md": EDA_NOTES });
+    await seedArtifacts(root, { "requirements.md": GOOD_REQUIREMENTS, "eda_report.md": EDA_NOTES });
 
     const ctx = await buildContext({
       projectRoot: root,

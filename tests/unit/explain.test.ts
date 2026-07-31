@@ -163,14 +163,13 @@ describe("explainNextStep: inputs present vs missing", () => {
     expect(text).toContain("requirements.md (present)");
     expect(text).toContain("acceptance_criteria.md (present)");
     expect(text).toContain("intake.md (present)");
-    // The legacy names nothing in the pipeline writes are reported honestly.
-    expect(text).toContain("clarifications.md (missing)");
-    expect(text).toContain("context.md (missing)");
-    expect(text).toContain("eda.md (missing)");
-    expect(text).toContain("no pipeline step currently writes these names");
+    // The upstream producer names not yet on disk are attributed honestly.
+    expect(text).toContain("context_pack.md (missing)");
+    expect(text).toContain("eda_report.md (missing)");
+    expect(text).not.toContain("no pipeline step currently writes these names");
   });
 
-  it("never claims 'plan' reads design's real outputs — only the literal design.md/eda.md names", async () => {
+  it("teaches that 'plan' reads design's semantic model plan but not the metric spec", async () => {
     const root = await makeTmpDir();
     const am = new ArtifactManager(root);
     // Simulate a normal `oswald design` run: it writes metric_spec.yml & co.
@@ -180,14 +179,12 @@ describe("explainNextStep: inputs present vs missing", () => {
     const state = makeState(root, "planning", { ticketId: "T-5" });
     const text = (await explainNextStep(makeInputs(root, state))).join("\n");
 
-    // `oswald plan` looks only for the literal legacy names — the design
-    // outputs on disk must NOT be presented as its inputs.
-    expect(text).toContain("design.md (missing)");
-    expect(text).toContain("eda.md (missing)");
+    // `oswald plan` consumes the semantic model plan directly...
+    expect(text).toContain("semantic_model_plan.md (present)");
+    expect(text).toContain("eda_report.md (missing)");
+    // ...but the metric spec stays design-level detail, and the boundary is taught.
     expect(text).not.toContain("metric_spec.yml (present)");
-    expect(text).toContain("no pipeline step currently writes these names");
-    // The producer/consumer filename gap is taught, not papered over.
-    expect(text).toContain("which plan does NOT read");
+    expect(text).toContain("which plan does not read");
   });
 
   it("shows delivery's validation fallback chain with first-existing semantics", async () => {
@@ -235,11 +232,14 @@ describe("explain reads: pinned to the consumers' literal input constants", () =
     expect(explainedReads("plan")).toEqual(Object.values(PLANNING_INPUTS));
     expect(explainedReads("validate")).toEqual([ACCEPTANCE_ARTIFACT]);
 
-    // Delivery backs both verbs; both report the same fallback chains.
+    // Delivery backs both verbs; both report the primary names from the
+    // consumer's constants plus the legacy fallbacks its read site accepts.
     const deliveryReads = [
-      ...DELIVERY_INPUTS.validation,
-      ...DELIVERY_INPUTS.plan,
-      ...DELIVERY_INPUTS.requirements,
+      DELIVERY_INPUTS.validation,
+      "validation.md",
+      DELIVERY_INPUTS.plan,
+      "plan.md",
+      DELIVERY_INPUTS.requirements,
     ];
     expect(explainedReads("pr")).toEqual(deliveryReads);
     expect(explainedReads("update-ticket")).toEqual(deliveryReads);

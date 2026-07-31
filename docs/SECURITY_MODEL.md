@@ -74,28 +74,55 @@ gated action classes:
 
 A write proceeds **only when both** conditions hold:
 
-1. an **explicit `yes`** is supplied by the caller (a `--yes` / `--post` /
-   `--open` / `--apply` flag — never a default), and
+1. **consent** is supplied — an **explicit `yes`** from the caller (a `--yes` /
+   `--post` / `--open` / `--apply` flag — never a default), or a **policy
+   grant** via `policies.autonomy` (below), and
 2. the configured policy **permits** the action class.
 
-The decision logic fails closed:
+The decision logic fails closed (top rule wins):
 
 - action appears in `policies.prohibit` → **`prohibited`** (never allowed, even
-  with `--yes`). The shipped default prohibits
+  with `--yes` or an autonomy grant). The shipped default prohibits
   `direct_push_to_protected_branch`.
-- no explicit `yes` → **`denied`** (even if the action wasn't separately listed —
-  any side-effecting write without consent is denied).
-- explicit `yes` + not prohibited → **`allowed`**.
+- draft forced → **`denied`** (draft-only vetoes every consent source).
+- explicit `yes` → **`allowed`** (consent source `flag`).
+- explicit decline (`yes: false`, what `--draft` collapses to) → **`denied`** —
+  it also blocks a policy grant.
+- no explicit signal + `policies.autonomy.level: auto_safe` + action listed in
+  `policies.autonomy.auto_approve` → **`allowed`** (consent source `policy`).
+- otherwise → **`denied`** (even if the action wasn't separately listed — any
+  side-effecting write without consent is denied).
 
-In non-interactive / test mode there is no prompt: absent an explicit `yes`, the
-action is denied. This makes the autonomous runtime safe by construction and
-tests deterministic. A `--draft` flag is the *opposite* of consent and always
-forces draft-only, overriding any other flag (`resolveConsent` in
-`src/cli/commands/_run.ts`).
+Every decision records its **consent source** (`flag` / `policy` / `none`), so
+an audit trail always shows whether a human flag or the autonomy policy
+consented. Policy-granted consent is deliberately the weakest source:
 
-Config drives the gate via `policies.require_approval_for` and
-`policies.prohibit`. Action aliases are accepted (e.g. `warehouse_write` ≡
-`execute_write_sql`, `pr_open` ≡ `open_pull_request`) so either vocabulary works.
+- `policies.autonomy.level: draft_only` (the shipped default) grants nothing —
+  `auto_approve` is ignored entirely and behavior is exactly the classic
+  flag-only gate.
+- `policies.autonomy.level: auto_safe` treats the action classes listed in
+  `auto_approve` (same vocabulary/aliases as the other lists) as consented —
+  but **only** for a caller that deliberately opts in with
+  `consentMode: "policy"` (reserved for a future autonomous runner). Every
+  interactive CLI command runs in `consentMode: "explicit"`, where the absence
+  of flags collapses to an explicit decline, so autonomy can never activate
+  for a flag-less interactive run. It never applies to an action matching
+  `prohibit` — the prohibit list is absolute — and the `push` action class has
+  an additional **hard floor**: it can never receive policy consent (and is
+  rejected outright in `auto_approve` at config load), even if `prohibit` has
+  been emptied. Protected-branch pushes stay human-only.
+
+In non-interactive / test mode there is no prompt: absent consent from a flag or
+the policy, the action is denied. This makes the autonomous runtime safe by
+construction and tests deterministic. A `--draft` flag is the *opposite* of
+consent and always forces draft-only, overriding any other flag and any policy
+grant (`resolveConsent` in `src/cli/commands/_run.ts` collapses it to an
+explicit decline).
+
+Config drives the gate via `policies.require_approval_for`,
+`policies.prohibit`, and `policies.autonomy`. Action aliases are accepted (e.g.
+`warehouse_write` ≡ `execute_write_sql`, `pr_open` ≡ `open_pull_request`) so
+either vocabulary works.
 
 ---
 
