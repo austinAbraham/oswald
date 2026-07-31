@@ -2,6 +2,7 @@ import type { Command } from "commander";
 import { registerInit } from "./init.js";
 import { registerDoctor } from "./doctor.js";
 import { registerNext } from "./next.js";
+import { registerRun } from "./run.js";
 import { registerIntake } from "./intake.js";
 import { registerClarify } from "./clarify.js";
 import { registerContext } from "./context.js";
@@ -20,7 +21,7 @@ import { registerCompact } from "./compact.js";
  *
  * Pipeline commands (intake → … → update-ticket) are tentacle-backed via the
  * shared runner; build/ship/compact are deterministic non-tentacle commands;
- * init/doctor/next are operator commands.
+ * init/doctor/next/run are operator commands.
  */
 export function registerCommands(program: Command): void {
   // Operator / setup.
@@ -43,4 +44,5 @@ export function registerCommands(program: Command): void {
   // Maintenance + navigation.
   registerCompact(program);
   registerNext(program);
+  registerRun(program);
 }

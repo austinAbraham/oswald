@@ -267,6 +267,7 @@ stays green offline. `oswald doctor` reports whether `snow` was detected.
 | `ship <ticket>` | Finalize: verify validation + PR summary, archive intermediates, mark `shipped`. |
 | `compact` | Summarize artifacts into `current_context.md`; archive noisy intermediates. |
 | `next` | Show (or `--run`) the recommended next command from state. |
+| `run <ticket>` | Execute the recommended next step; `--auto` loops until a terminal phase, a blocker, or an approval gate (consent is never auto-granted). |
 
 Every command accepts `-C, --cwd <dir>` to set the project root.
 
