@@ -42,9 +42,10 @@ a uniform contract:
 | `1`  | hard error — the command threw, an unknown tentacle, or a precondition failed (e.g. `--strict-providers` refused a provider fallback) |
 | `2`  | **blocked** — the workflow landed in `blocked` (e.g. a validation gate failed). Not a crash; artifacts are still written, but the non-zero code halts automation. |
 
-Operator commands (`doctor`, `ship`, `compact`, `next`, `init`) use `0`/`1`
-(`doctor` returns `1` on any fail-status check; `ship`/`compact` return `1` on a
-precondition failure).
+Operator commands (`doctor`, `status`, `ship`, `compact`, `next`, `init`) use
+`0`/`1` (`doctor` returns `1` on any fail-status check; `ship`/`compact` return
+`1` on a precondition failure; `status` is read-only and returns `0` even when
+the project is uninitialized).
 
 ---
 
@@ -74,6 +75,27 @@ per-provider health, and policy mode.
 | `-C, --cwd <dir>` | project root |
 
 **Writes:** nothing. **Exit:** `0` if no check has `fail` status, else `1`.
+
+### `oswald status`
+At-a-glance, read-only run dashboard on one screen: current phase, ticket
+id/provider, requirements completeness (progress bar) + unresolved question
+count, blockers, which canonical artifacts exist vs are missing (from the
+registry in `src/core/artifacts/names.ts`), provider/tool health (the same
+cheap probes `doctor` runs, including `snow` CLI detection), and the
+recommended next command plus its successor from the workflow state machine.
+Pure composition of existing readers — no writes, no side effects. Honors
+`paths.artifact_dir` from `oswald.yml` (the same resolution the pipeline uses),
+so it reads whatever directory the run actually writes to. When the artifact
+dir or `state.yml` is missing it degrades gracefully and points at
+`oswald init` / `oswald intake`; an invalid `oswald.yml` falls back to the
+default `.oswald` dir (run `oswald doctor` to surface config problems).
+
+| Option | Description |
+|--------|-------------|
+| `--json` | emit the same report as JSON on stdout (no log prefixes) |
+| `-C, --cwd <dir>` | project root |
+
+**Writes:** nothing. **Exit:** `0` (a hard error still exits `1`).
 
 ### `oswald next`
 Show (or run) the recommended next command, derived from the workflow state
