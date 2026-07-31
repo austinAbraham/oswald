@@ -127,7 +127,9 @@ function matchesAny(action: ApprovalAction, list: string[]): boolean {
  *  - explicit `yes: false` → `denied` (an explicit decline — what `--draft`
  *    collapses to — blocks policy-granted consent too)
  *  - no explicit signal + autonomy level `auto_safe` + action in
- *    `auto_approve` → `allowed` (consent source `policy`)
+ *    `auto_approve` → `allowed` (consent source `policy`) — EXCEPT `push`,
+ *    which has a hard floor: it can never receive policy consent, even with
+ *    an emptied `prohibit` list (protected-branch pushes stay human-only)
  *  - otherwise → `denied`: we DEFAULT-DENY any side-effecting action without
  *    consent, even if the policy did not list it. (Fail closed.)
  */
@@ -177,6 +179,17 @@ export class ApprovalService {
       policy.autonomyLevel === "auto_safe" &&
       matchesAny(action, policy.autoApprove ?? [])
     ) {
+      if (action === "push") {
+        return {
+          action,
+          decision: "denied",
+          allowed: false,
+          reason:
+            "Action 'push' can never be auto-approved by policy (hard floor): " +
+            "pushes require explicit consent regardless of autonomy.auto_approve.",
+          consentSource: "none",
+        };
+      }
       return {
         action,
         decision: "allowed",

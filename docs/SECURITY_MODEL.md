@@ -101,11 +101,16 @@ consented. Policy-granted consent is deliberately the weakest source:
   `auto_approve` is ignored entirely and behavior is exactly the classic
   flag-only gate.
 - `policies.autonomy.level: auto_safe` treats the action classes listed in
-  `auto_approve` (same vocabulary/aliases as the other lists) as consented for
-  callers that pass **no consent signal at all** (e.g. a future autonomous
-  runner). It never applies to an action matching `prohibit` — the prohibit
-  list is absolute, so `direct_push_to_protected_branch` can never be
-  auto-approved.
+  `auto_approve` (same vocabulary/aliases as the other lists) as consented —
+  but **only** for a caller that deliberately opts in with
+  `consentMode: "policy"` (reserved for a future autonomous runner). Every
+  interactive CLI command runs in `consentMode: "explicit"`, where the absence
+  of flags collapses to an explicit decline, so autonomy can never activate
+  for a flag-less interactive run. It never applies to an action matching
+  `prohibit` — the prohibit list is absolute — and the `push` action class has
+  an additional **hard floor**: it can never receive policy consent (and is
+  rejected outright in `auto_approve` at config load), even if `prohibit` has
+  been emptied. Protected-branch pushes stay human-only.
 
 In non-interactive / test mode there is no prompt: absent consent from a flag or
 the policy, the action is denied. This makes the autonomous runtime safe by

@@ -128,6 +128,44 @@ describe("ApprovalService: policy-granted consent (policies.autonomy)", () => {
     expect(r.consentSource).toBe("none");
   });
 
+  it("hard floor: never auto-approves push even when prohibit has been emptied", () => {
+    const p: ApprovalPolicy = {
+      requireApprovalFor: [],
+      prohibit: [],
+      autonomyLevel: "auto_safe",
+      autoApprove: ["push"],
+    };
+    const r = svc.requireApproval("push", { policy: p });
+    expect(r.allowed).toBe(false);
+    expect(r.decision).toBe("denied");
+    expect(r.consentSource).toBe("none");
+    expect(r.reason).toMatch(/hard floor/);
+  });
+
+  it("hard floor covers the direct_push_to_protected_branch alias in auto_approve", () => {
+    const p: ApprovalPolicy = {
+      requireApprovalFor: [],
+      prohibit: [],
+      autonomyLevel: "auto_safe",
+      autoApprove: ["direct_push_to_protected_branch"],
+    };
+    const r = svc.requireApproval("push", { policy: p });
+    expect(r.allowed).toBe(false);
+    expect(r.consentSource).toBe("none");
+  });
+
+  it("hard floor does not block explicit flag consent for a non-prohibited push", () => {
+    const p: ApprovalPolicy = {
+      requireApprovalFor: [],
+      prohibit: [],
+      autonomyLevel: "auto_safe",
+      autoApprove: [],
+    };
+    const r = svc.requireApproval("push", { yes: true, policy: p });
+    expect(r.allowed).toBe(true);
+    expect(r.consentSource).toBe("flag");
+  });
+
   it("treats an explicit yes=false as a decline that blocks policy consent", () => {
     const r = svc.requireApproval("commit", { yes: false, policy: autoSafe });
     expect(r.allowed).toBe(false);

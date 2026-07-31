@@ -77,6 +77,31 @@ describe("config: parseConfig", () => {
       }),
     ).toThrow(ConfigError);
   });
+
+  it("rejects 'push' in autonomy.auto_approve (hard floor)", () => {
+    expect(() =>
+      parseConfig({
+        project: { name: "demo" },
+        policies: {
+          autonomy: { level: "auto_safe", auto_approve: ["push"] },
+        },
+      }),
+    ).toThrow(ConfigError);
+  });
+
+  it("rejects the direct_push_to_protected_branch alias in auto_approve, case-insensitively", () => {
+    expect(() =>
+      parseConfig({
+        project: { name: "demo" },
+        policies: {
+          autonomy: {
+            level: "auto_safe",
+            auto_approve: [" Direct_Push_To_Protected_Branch "],
+          },
+        },
+      }),
+    ).toThrow(ConfigError);
+  });
 });
 
 describe("config: loadConfig", () => {

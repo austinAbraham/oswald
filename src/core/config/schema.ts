@@ -129,10 +129,27 @@ export const PrivacyPolicySchema = z
  *
  * An explicit `--draft` still forces draft-only regardless of this block.
  */
+/** Action labels that may never appear in `autonomy.auto_approve` (hard floor). */
+const NEVER_AUTO_APPROVABLE = ["push", "direct_push_to_protected_branch"];
+
 export const AutonomyPolicySchema = z
   .object({
     level: z.enum(["draft_only", "auto_safe"]).default("draft_only"),
-    auto_approve: z.array(z.string()).default([]),
+    auto_approve: z
+      .array(z.string())
+      .default([])
+      .refine(
+        (list) =>
+          !list.some((a) =>
+            NEVER_AUTO_APPROVABLE.includes(a.toLowerCase().trim()),
+          ),
+        {
+          message:
+            "policies.autonomy.auto_approve may never include 'push' or " +
+            "'direct_push_to_protected_branch' — pushes always require " +
+            "explicit human consent",
+        },
+      ),
   })
   .default({});
 
