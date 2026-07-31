@@ -13,7 +13,14 @@ import { describe, it, expect, afterEach } from "vitest";
 import { promises as fs } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { runTentacleCommand, resolveConsent } from "../../src/cli/commands/_run.js";
+import {
+  runTentacleCommand,
+  resolveConsent,
+  resolvePolicyModeConsent,
+} from "../../src/cli/commands/_run.js";
+import { z } from "zod";
+import { TENTACLE_REGISTRY } from "../../src/tentacles/registry.js";
+import type { Tentacle } from "../../src/tentacles/base.js";
 import { buildProgram } from "../../src/cli/index.js";
 import { selectProviders } from "../../src/cli/commands/_providers.js";
 import { createInitialState, writeState, readState } from "../../src/core/state/index.js";
@@ -83,6 +90,115 @@ describe("CLI: resolveConsent", () => {
     expect(resolveConsent({ open: true })).toBe(true);
     expect(resolveConsent({ apply: true })).toBe(true);
     expect(resolveConsent({})).toBe(false);
+  });
+});
+
+describe("CLI: resolvePolicyModeConsent (consentMode 'policy')", () => {
+  it("leaves flag-less runs undecided so the autonomy policy may speak", () => {
+    expect(resolvePolicyModeConsent(undefined)).toBeUndefined();
+    expect(resolvePolicyModeConsent({})).toBeUndefined();
+  });
+
+  it("draft still collapses to an explicit decline that blocks policy consent", () => {
+    expect(resolvePolicyModeConsent({ draft: true })).toBe(false);
+    expect(resolvePolicyModeConsent({ draft: true, yes: true })).toBe(false);
+  });
+
+  it("explicit consent flags still win", () => {
+    expect(resolvePolicyModeConsent({ yes: true })).toBe(true);
+    expect(resolvePolicyModeConsent({ post: true })).toBe(true);
+    expect(resolvePolicyModeConsent({ open: true })).toBe(true);
+    expect(resolvePolicyModeConsent({ apply: true })).toBe(true);
+  });
+});
+
+describe("CLI: consent mode is structural (autonomy never leaks into the interactive CLI)", () => {
+  /** Register a probe tentacle that records the options the runner passes. */
+  function registerProbe(seen: Array<Record<string, unknown>>): () => void {
+    const probe = {
+      id: "probe-consent",
+      title: "Consent probe",
+      description: "records the options the shared runner passes to a tentacle",
+      inputSchema: z.record(z.unknown()),
+      outputSchema: z.record(z.unknown()),
+      requiredTools: [],
+      optionalTools: [],
+      checklist: [],
+      async run(ctx: { options: Record<string, unknown> }) {
+        seen.push({ ...ctx.options });
+        return { summary: "probe ran", artifactsWritten: [] };
+      },
+    } as unknown as Tentacle;
+    TENTACLE_REGISTRY[probe.id] = probe;
+    return () => {
+      delete TENTACLE_REGISTRY[probe.id];
+    };
+  }
+
+  it("a run with NO approval arg reaches the tentacle as an explicit yes: false", async () => {
+    const root = await makeTmpDir();
+    const seen: Array<Record<string, unknown>> = [];
+    const unregister = registerProbe(seen);
+    try {
+      const { logger } = captureLogger();
+      const outcome = await runTentacleCommand({
+        id: "probe-consent",
+        command: "probe-consent",
+        cwd: root,
+        initStateIfMissing: true,
+        logger,
+      });
+      expect(outcome.exitCode).toBe(0);
+      expect(seen).toHaveLength(1);
+      // Structural safe default: absence of flags is an explicit decline, so
+      // ApprovalService can never fall through to policy-granted consent.
+      expect(seen[0]!.yes).toBe(false);
+    } finally {
+      unregister();
+    }
+  });
+
+  it("consentMode 'policy' with no flags leaves yes unset (the deliberate opt-in)", async () => {
+    const root = await makeTmpDir();
+    const seen: Array<Record<string, unknown>> = [];
+    const unregister = registerProbe(seen);
+    try {
+      const { logger } = captureLogger();
+      await runTentacleCommand({
+        id: "probe-consent",
+        command: "probe-consent",
+        cwd: root,
+        initStateIfMissing: true,
+        consentMode: "policy",
+        logger,
+      });
+      expect(seen).toHaveLength(1);
+      expect("yes" in seen[0]!).toBe(false);
+    } finally {
+      unregister();
+    }
+  });
+
+  it("consentMode 'policy' still collapses --draft to an explicit decline", async () => {
+    const root = await makeTmpDir();
+    const seen: Array<Record<string, unknown>> = [];
+    const unregister = registerProbe(seen);
+    try {
+      const { logger } = captureLogger();
+      await runTentacleCommand({
+        id: "probe-consent",
+        command: "probe-consent",
+        cwd: root,
+        initStateIfMissing: true,
+        consentMode: "policy",
+        approval: { draft: true },
+        logger,
+      });
+      expect(seen).toHaveLength(1);
+      expect(seen[0]!.yes).toBe(false);
+    } finally {
+      unregister();
+    }
   });
 });
 

@@ -60,10 +60,34 @@ export interface ApprovalFlags {
  * `--draft` always wins (forces draft-only). Otherwise any of `--yes/--post/
  * --open/--apply` grants consent. The ApprovalService still independently
  * checks policy, so consent here is necessary but never sufficient.
+ *
+ * The returned boolean is always explicit: `false` reaches the
+ * ApprovalService as an explicit decline, which also blocks policy-granted
+ * consent (`policies.autonomy.auto_approve`) — so `--draft` forces draft-only
+ * regardless of policy. Policy-granted consent is only reachable via
+ * `consentMode: "policy"` (see {@link RunTentacleCommandArgs}), a deliberate
+ * opt-in reserved for an autonomous runner — never the interactive CLI.
  */
 export function resolveConsent(flags: ApprovalFlags): boolean {
   if (flags.draft) return false;
   return Boolean(flags.yes || flags.post || flags.open || flags.apply);
+}
+
+/**
+ * Consent mapping for `consentMode: "policy"` — the deliberate opt-in used by
+ * an autonomous runner. `--draft` still collapses to an explicit decline and
+ * any explicit consent flag still wins; only the flag-less middle ground is
+ * left `undefined` so the ApprovalService may consult
+ * `policies.autonomy.auto_approve`.
+ */
+export function resolvePolicyModeConsent(
+  flags: ApprovalFlags | undefined,
+): boolean | undefined {
+  if (!flags) return undefined;
+  if (flags.draft) return false;
+  return flags.yes || flags.post || flags.open || flags.apply
+    ? true
+    : undefined;
 }
 
 export interface RunTentacleCommandArgs {
@@ -92,6 +116,18 @@ export interface RunTentacleCommandArgs {
   strictProviders?: boolean;
   /** Approval flags → mapped into `options.yes`. */
   approval?: ApprovalFlags;
+  /**
+   * How consent is derived when approval flags are absent or neutral.
+   *
+   * - `"explicit"` (the default): the absence of flags collapses to an
+   *   explicit `yes: false`, so the ApprovalService can NEVER fall through to
+   *   policy-granted consent. Every interactive CLI command uses this mode —
+   *   consent flags are never defaults.
+   * - `"policy"`: the deliberate opt-in for an autonomous runner. Flag-less
+   *   runs pass `yes: undefined`, letting `policies.autonomy.auto_approve`
+   *   (level `auto_safe`) speak. `--draft` and explicit flags still win.
+   */
+  consentMode?: "explicit" | "policy";
   /** Seed initial state if `.oswald/state.yml` does not exist (intake only). */
   initStateIfMissing?: boolean;
   /** Logger override (tests). */
@@ -124,7 +160,10 @@ export async function runTentacleCommand(
     return { exitCode: 1, artifactsWritten: [], nextCommand: null };
   }
 
-  const consent = args.approval ? resolveConsent(args.approval) : undefined;
+  const consent =
+    args.consentMode === "policy"
+      ? resolvePolicyModeConsent(args.approval)
+      : resolveConsent(args.approval ?? {});
   const options: Record<string, unknown> = {
     ...(args.options ?? {}),
     ...(consent !== undefined ? { yes: consent } : {}),
