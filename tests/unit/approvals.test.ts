@@ -44,9 +44,34 @@ describe("ApprovalService: prohibited actions", () => {
   it("never allows a prohibited action, even with yes", () => {
     const pushPolicy: ApprovalPolicy = {
       requireApprovalFor: ["push"],
-      prohibit: ["direct_push_to_protected_branch"],
+      prohibit: ["push"],
     };
     const r = svc.requireApproval("push", { yes: true, policy: pushPolicy });
+    expect(r.allowed).toBe(false);
+    expect(r.decision).toBe("prohibited");
+  });
+
+  it("prohibiting direct_push_to_protected_branch does NOT veto feature-branch push", () => {
+    const defaultPolicy: ApprovalPolicy = {
+      requireApprovalFor: ["push"],
+      prohibit: ["direct_push_to_protected_branch"],
+    };
+    const push = svc.requireApproval("push", { yes: true, policy: defaultPolicy });
+    expect(push.allowed).toBe(true);
+    const protectedPush = svc.requireApproval("direct_push_to_protected_branch", {
+      yes: true,
+      policy: defaultPolicy,
+    });
+    expect(protectedPush.allowed).toBe(false);
+    expect(protectedPush.decision).toBe("prohibited");
+  });
+
+  it("a literal 'push' prohibit entry is enforced on the push action class", () => {
+    const noPushPolicy: ApprovalPolicy = {
+      requireApprovalFor: [],
+      prohibit: ["push"],
+    };
+    const r = svc.requireApproval("push", { yes: true, policy: noPushPolicy });
     expect(r.allowed).toBe(false);
     expect(r.decision).toBe("prohibited");
   });
@@ -80,8 +105,9 @@ describe("ApprovalService: assertApproved", () => {
 describe("approval helpers", () => {
   it("isApprovalAction validates the closed set", () => {
     expect(isApprovalAction("commit")).toBe(true);
+    expect(isApprovalAction("direct_push_to_protected_branch")).toBe(true);
     expect(isApprovalAction("nope")).toBe(false);
-    expect(APPROVAL_ACTIONS.length).toBe(8);
+    expect(APPROVAL_ACTIONS.length).toBe(9);
   });
   it("policyFromConfig maps config shape", () => {
     const p = policyFromConfig({

@@ -95,16 +95,25 @@ export function buildCommitArgv(base: string[], message: string): string[] {
 }
 
 /**
- * `git push --set-upstream <remote> <branch>` — push ONE named branch (write).
- * There is deliberately NO builder for a bare `git push` or a refspec push:
- * the only push Oswald can express is a single explicit branch.
+ * `git push --set-upstream <remote> refs/heads/<branch>:refs/heads/<branch>` —
+ * push ONE named branch (write). There is deliberately NO builder for a bare
+ * `git push` or a caller-supplied refspec: the only push Oswald can express is
+ * a single explicit branch, and the refspec is fully qualified on BOTH sides so
+ * a ref-qualified branch name (e.g. `refs/heads/main`) can never resolve to a
+ * different ref than the guard in the provider validated.
  */
 export function buildPushArgv(
   base: string[],
   remote: string,
   branch: string,
 ): string[] {
-  return [...base, "push", "--set-upstream", remote, branch];
+  return [
+    ...base,
+    "push",
+    "--set-upstream",
+    remote,
+    `refs/heads/${branch}:refs/heads/${branch}`,
+  ];
 }
 
 // ---------------------------------------------------------------------------

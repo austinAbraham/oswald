@@ -42,7 +42,11 @@ import {
   PROTECTED_BRANCHES,
 } from "../../src/tools/repo/provider.js";
 import { detectGit } from "../../src/tools/repo/detect.js";
-import { selectRepoProvider } from "../../src/cli/commands/_providers.js";
+import {
+  repoSettingsFromConfig,
+  selectRepoProvider,
+} from "../../src/cli/commands/_providers.js";
+import { parseConfig } from "../../src/core/config/index.js";
 import type {
   RepoCommandOutcome,
   RepoRunOptions,
@@ -106,13 +110,13 @@ describe("argv builders — the only git invocations Oswald can emit", () => {
   it("add always stages behind '--' so paths can never become options", () => {
     expect(buildAddArgv(base, ["a.sql", "b.yml"])).toEqual(["git", "add", "--", "a.sql", "b.yml"]);
   });
-  it("push can only express ONE explicit named branch", () => {
+  it("push can only express ONE branch, as a fully qualified refs/heads refspec", () => {
     expect(buildPushArgv(base, "origin", "feat/x")).toEqual([
       "git",
       "push",
       "--set-upstream",
       "origin",
-      "feat/x",
+      "refs/heads/feat/x:refs/heads/feat/x",
     ]);
   });
 });
@@ -264,6 +268,15 @@ describe("isSafeRefName", () => {
     expect(isSafeRefName("")).toBe(false);
     expect(isSafeRefName("has space")).toBe(false);
   });
+  it("refuses ref-qualified names that could dodge the protected-branch guard", () => {
+    expect(isSafeRefName("refs/heads/main")).toBe(false);
+    expect(isSafeRefName("heads/main")).toBe(false);
+    expect(isSafeRefName("refs/heads/master")).toBe(false);
+    expect(isSafeRefName("REFS/HEADS/MAIN")).toBe(false);
+    expect(isSafeRefName("Heads/main")).toBe(false);
+    expect(isSafeRefName("refspec-lookalike")).toBe(true);
+    expect(isSafeRefName("headstrong/feature")).toBe(true);
+  });
 });
 
 describe("GitRepoProvider — approval gate + forge selection (injected runner)", () => {
@@ -377,7 +390,7 @@ describe("GitRepoProvider — approval gate + forge selection (injected runner)"
     expect(res.ok).toBe(true);
     expect(calls).toEqual([
       ["git", "remote", "get-url", "origin"],
-      ["git", "push", "--set-upstream", "origin", "feat/x"],
+      ["git", "push", "--set-upstream", "origin", "refs/heads/feat/x:refs/heads/feat/x"],
       [
         "gh", "pr", "create",
         "--title", "feat: x",
@@ -398,6 +411,58 @@ describe("GitRepoProvider — approval gate + forge selection (injected runner)"
       expect(res.error).toMatch(/protected/i);
     }
     expect(calls).toHaveLength(0);
+  });
+
+  it("refuses ref-qualified protected branch names even WITH yes (no spawn at all)", async () => {
+    const { provider, calls } = providerWith(githubRemote);
+    for (const branch of ["refs/heads/main", "heads/main", "refs/heads/master"]) {
+      const res = await provider.openPullRequest({ ...pr, branch, base: "develop" }, { yes: true });
+      expect(res.ok).toBe(false);
+      expect(res.error).toMatch(/unsafe branch or base name/i);
+    }
+    expect(calls).toHaveLength(0);
+  });
+
+  it("refuses a ref-qualified base name even WITH yes (no spawn at all)", async () => {
+    const { provider, calls } = providerWith(githubRemote);
+    const res = await provider.openPullRequest(
+      { ...pr, base: "refs/heads/main" },
+      { yes: true },
+    );
+    expect(res.ok).toBe(false);
+    expect(res.error).toMatch(/unsafe branch or base name/i);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("the invoke() passthrough enforces the same ref-qualified refusal", async () => {
+    const { provider, calls } = providerWith(githubRemote);
+    const res = await provider.invoke(
+      "openPullRequest",
+      { pr: { title: "t", branch: "refs/heads/main", base: "develop" } },
+      { yes: true },
+    );
+    expect(res.ok).toBe(false);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("a policy prohibiting 'push' refuses openPullRequest even WITH yes (no spawn)", async () => {
+    const { provider, calls } = providerWith(githubRemote, {
+      policy: {
+        requireApprovalFor: ["create_branch", "commit", "open_pull_request"],
+        prohibit: ["push"],
+      },
+    });
+    const res = await provider.openPullRequest(pr, { yes: true });
+    expect(res.ok).toBe(false);
+    expect(res.error).toMatch(/'push' is prohibited by policy/);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("the default prohibit list (direct_push_to_protected_branch) still permits the feature-branch push", async () => {
+    const { provider, calls } = providerWith(githubRemote);
+    const res = await provider.openPullRequest(pr, { yes: true });
+    expect(res.ok).toBe(true);
+    expect(calls.some((argv) => argv[1] === "push")).toBe(true);
   });
 
   it("refuses when the feature branch equals the base (no spawn)", async () => {
@@ -530,6 +595,16 @@ describe("selectRepoProvider — opt-in wiring with mock fallback", () => {
       command: "definitely-not-a-real-git-binary-xyz",
     });
     expect(p.name).toBe("mock-repo");
+  });
+
+  it("repoSettingsFromConfig threads config.policies into the provider settings", () => {
+    const config = parseConfig({
+      project: { name: "demo" },
+      policies: { prohibit: ["push"] },
+    });
+    const settings = repoSettingsFromConfig(config);
+    expect(settings.policy?.prohibit).toEqual(["push"]);
+    expect(settings.policy?.requireApprovalFor).toContain("pr_open");
   });
 });
 

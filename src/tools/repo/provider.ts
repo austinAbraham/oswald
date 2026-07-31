@@ -11,17 +11,21 @@
  * SAFETY INVARIANTS:
  *   - APPROVAL BEFORE SPAWN: createBranch / commit / openPullRequest route
  *     through the ApprovalService FIRST (action classes `create_branch`,
- *     `commit`, `open_pull_request`), exactly as the mock does. Default-deny:
- *     no explicit `yes` + permitting policy → refused WITHOUT spawning.
+ *     `commit`, `open_pull_request` — plus `push`, since opening a PR pushes
+ *     the feature branch), exactly as the mock does. Default-deny: no explicit
+ *     `yes` + permitting policy → refused WITHOUT spawning. A config
+ *     `policies.prohibit: ["push"]` refuses the PR push outright.
  *   - NO PUSH-TO-PROTECTED PATH: there is no way to push `main`/`master` (or
  *     the PR base branch) through this provider. `openPullRequest` pushes ONLY
- *     the named feature branch, and refuses protected names outright — the
+ *     the named feature branch, refuses protected names outright, refuses
+ *     ref-qualified names (`refs/…`, `heads/…`) that could dodge the name
+ *     check, and pushes a fully qualified `refs/heads/` refspec — the
  *     `direct_push_to_protected_branch` prohibition is enforced structurally,
  *     not just by policy.
  *   - ARGV SAFETY: branch names are validated against a conservative ref
- *     grammar (no leading `-`, no `..`) and file paths are staged behind `--`,
- *     so caller-supplied strings can never become git options. Nothing is ever
- *     interpolated into a shell.
+ *     grammar (no leading `-`, no `..`, no `refs/`/`heads/` prefix) and file
+ *     paths are staged behind `--`, so caller-supplied strings can never become
+ *     git options. Nothing is ever interpolated into a shell.
  *   - GRACEFUL DEGRADATION: a missing forge CLI or an unrecognized remote
  *     refuses `openPullRequest` with actionable guidance (and `health()`
  *     reports it) instead of failing mysteriously.
@@ -80,12 +84,16 @@ export const PROTECTED_BRANCHES: readonly string[] = ["main", "master"];
 
 /**
  * Conservative ref-name gate: letters/digits/`.`/`_`/`/`/`-`, must start with
- * a letter or digit (so a name can never be parsed as a git option), no `..`.
- * Stricter than git's own rules on purpose — when in doubt, refuse.
+ * a letter or digit (so a name can never be parsed as a git option), no `..`,
+ * and no `refs/` or `heads/` leading path segment — a ref-qualified name like
+ * `refs/heads/main` would otherwise slip past the exact-string protected-branch
+ * guard while resolving to the protected ref. Stricter than git's own rules on
+ * purpose — when in doubt, refuse.
  */
 export function isSafeRefName(name: string): boolean {
   if (!name || name.length > 200) return false;
   if (name.includes("..")) return false;
+  if (/^(refs|heads)\//i.test(name)) return false;
   return /^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(name);
 }
 
@@ -295,15 +303,29 @@ export class GitRepoProvider implements RepoProvider {
     });
     if (!decision.allowed) return { ok: false, error: decision.reason };
 
+    // Opening a PR pushes the feature branch, so the `push` action class must
+    // also permit it — a config `policies.prohibit: ["push"]` refuses here,
+    // BEFORE anything spawns.
+    const pushDecision = this.approvals.requireApproval("push", {
+      yes: options.yes,
+      policy: this.policy,
+      reason: options.reason,
+    });
+    if (!pushDecision.allowed) return { ok: false, error: pushDecision.reason };
+
     if (!isSafeRefName(pr.branch) || !isSafeRefName(pr.base)) {
       return {
         ok: false,
-        error: "openPullRequest refused: unsafe branch or base name.",
+        error:
+          "openPullRequest refused: unsafe branch or base name (ref-qualified names like 'refs/heads/…' are rejected).",
       };
     }
     // Structural no-push-to-protected guard: the ONLY branch this provider can
     // push is the feature branch, and it must never be a protected branch or
     // the PR base itself. This cannot be overridden by consent or policy.
+    // (isSafeRefName above already refused `refs/`-/`heads/`-qualified names,
+    // so the exact-string comparison here cannot be sidestepped, and
+    // buildPushArgv pushes a fully qualified refs/heads/ refspec besides.)
     if (
       PROTECTED_BRANCHES.includes(pr.branch) ||
       pr.branch === pr.base

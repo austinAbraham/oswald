@@ -207,15 +207,21 @@ to protected branches is prohibited.
 
 By default the repo provider is the deterministic mock, so `--open --yes` records
 the gated action without touching the real repo. Opt in to the real path with a
-`repo:` block in `oswald.yml` (`repo.provider: git`): `--open --yes` then pushes
-ONLY the feature branch via the `git` CLI and opens the PR with the forge CLI
-selected from the remote URL — `gh` (github.com), `glab` (gitlab), `az repos`
-(dev.azure.com / visualstudio.com). Only CLI invocations and a remote NAME are
-configured — forge auth stays in the forge CLI's own config (`gh auth login`,
+`repo:` block in `oswald.yml` (`repo.provider: git`): `--open --yes` then creates
+the branch, commits the summarized changed files onto it (gated under the
+`commit` action class), pushes ONLY the feature branch via the `git` CLI, and
+opens the PR with the forge CLI selected from the remote URL — `gh` (github.com),
+`glab` (gitlab), `az repos` (dev.azure.com / visualstudio.com). A freshly created
+branch with no commit is never pushed (nothing to open a PR for), and the push
+itself is additionally gated under the `push` action class, so
+`policies.prohibit: ["push"]` blocks it. Only CLI invocations and a remote NAME
+are configured — forge auth stays in the forge CLI's own config (`gh auth login`,
 `glab auth login`, `az login`). When `git` or the forge CLI is missing, Oswald
 warns and degrades gracefully (mock fallback / a clear refusal with guidance).
 Pushing a protected branch (`main`/`master`, or the PR base itself) is refused
-structurally, regardless of flags or policy.
+structurally, regardless of flags or policy — ref-qualified branch names
+(`refs/heads/…`, `heads/…`) are rejected outright, and the push always uses a
+fully qualified `refs/heads/<branch>:refs/heads/<branch>` refspec.
 
 ### `oswald update-ticket <ticket>`
 Write results back to the ticket. Posting is gated.

@@ -13,7 +13,11 @@ import {
   suggestBranchName,
   suggestPrTitle,
 } from "../../../src/tentacles/delivery/parse.js";
-import { MockRepoProvider, MockTicketProvider } from "../../../src/tools/index.js";
+import {
+  GitRepoProvider,
+  MockRepoProvider,
+  MockTicketProvider,
+} from "../../../src/tools/index.js";
 import { parseConfig } from "../../../src/core/config/index.js";
 import { readState } from "../../../src/core/state/index.js";
 import { fixedClock } from "../../../src/utils/time.js";
@@ -270,6 +274,7 @@ describe("delivery tentacle: draft-only default", () => {
 
     const byName = (n: string) => actions.find((a) => a.action === n);
     expect(byName("create_branch")?.taken).toBe(true);
+    expect(byName("commit")?.taken).toBe(true);
     expect(byName("open_pull_request")?.taken).toBe(true);
     expect(byName("ticket_update")?.taken).toBe(true);
     // create_ticket is never auto-executed (no provider capability).
@@ -277,6 +282,73 @@ describe("delivery tentacle: draft-only default", () => {
 
     const jira = await ctx.artifacts.read("jira_update.md");
     expect(jira).toContain("Posted to the ticket");
+  });
+
+  it("commits the changed files onto the new branch BEFORE pushing/opening the PR", async () => {
+    const root = await makeTmpDir();
+    await seedUpstream(root, { validation: VALIDATION_PASS });
+
+    const calls: string[][] = [];
+    const repo = new GitRepoProvider({
+      cwd: root,
+      policy: {
+        requireApprovalFor: ["create_branch", "commit", "open_pull_request", "push"],
+        prohibit: ["direct_push_to_protected_branch"],
+      },
+      detectCli: () => ({ available: true }),
+      runner: async (argv: string[]) => {
+        calls.push(argv);
+        if (argv[1] === "remote") {
+          return { ok: true, stdout: "https://github.com/acme/demo.git\n", stderr: "" };
+        }
+        if (argv[0] === "gh") {
+          return { ok: true, stdout: "https://github.com/acme/demo/pull/8\n", stderr: "" };
+        }
+        return { ok: true, stdout: "", stderr: "" };
+      },
+    });
+
+    const ctx = await buildDeliveryCtx({
+      root,
+      providers: { repo },
+      options: { yes: true, changedFiles: ["models/m.sql"] },
+    });
+
+    const result = await deliveryTentacle.run(ctx);
+    const byName = (n: string) =>
+      result.output?.gatedActions.find((a) => a.action === n);
+    expect(byName("create_branch")?.taken).toBe(true);
+    expect(byName("commit")?.taken).toBe(true);
+    expect(byName("open_pull_request")?.taken).toBe(true);
+
+    const subcommands = calls.map((argv) => (argv[0] === "git" ? argv[1]! : argv[0]!));
+    expect(subcommands).toContain("checkout");
+    expect(subcommands).toContain("add");
+    expect(subcommands).toContain("commit");
+    expect(subcommands).toContain("push");
+    expect(subcommands).toContain("gh");
+    expect(subcommands.indexOf("checkout")).toBeLessThan(subcommands.indexOf("add"));
+    expect(subcommands.indexOf("commit")).toBeLessThan(subcommands.indexOf("push"));
+  });
+
+  it("skips push + PR when the freshly created branch got no commit (empty changeset)", async () => {
+    const root = await makeTmpDir();
+    await seedUpstream(root, { validation: VALIDATION_PASS });
+
+    const repo = new MockRepoProvider({ cwd: root, branch: "main" });
+    const ctx = await buildDeliveryCtx({
+      root,
+      providers: { repo },
+      options: { yes: true, changedFiles: [] },
+    });
+
+    const result = await deliveryTentacle.run(ctx);
+    const byName = (n: string) =>
+      result.output?.gatedActions.find((a) => a.action === n);
+    expect(byName("create_branch")?.taken).toBe(true);
+    expect(byName("commit")?.taken).toBe(false);
+    expect(byName("open_pull_request")?.taken).toBe(false);
+    expect(result.warnings?.some((w) => /no commits ahead/i.test(w))).toBe(true);
   });
 });
 

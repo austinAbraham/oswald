@@ -27,6 +27,7 @@ import { SnowflakeWarehouseProvider, detectSnow } from "../../tools/snowflake/in
 import { GitRepoProvider, detectGit } from "../../tools/repo/index.js";
 import type { TentacleProviders } from "../../tentacles/base.js";
 import type { OswaldConfig } from "../../core/config/index.js";
+import { policyFromConfig, type ApprovalPolicy } from "../../core/approvals/index.js";
 import { logger } from "../../core/logging/index.js";
 
 /**
@@ -64,9 +65,11 @@ export interface RepoSettings {
   remote?: string;
   /** Subprocess timeout in ms. */
   timeoutMs?: number;
+  /** Approval policy from `config.policies` — enforced INSIDE the provider. */
+  policy?: ApprovalPolicy;
 }
 
-/** Build {@link RepoSettings} from the config `repo` block. */
+/** Build {@link RepoSettings} from the config `repo` + `policies` blocks. */
 export function repoSettingsFromConfig(config: OswaldConfig): RepoSettings {
   return {
     provider: config.repo.provider,
@@ -76,6 +79,7 @@ export function repoSettingsFromConfig(config: OswaldConfig): RepoSettings {
       : {}),
     remote: config.repo.remote,
     timeoutMs: config.repo.timeout_ms,
+    policy: policyFromConfig(config.policies),
   };
 }
 
@@ -179,7 +183,10 @@ export function selectRepoProvider(
   settings: RepoSettings | undefined,
 ): GitRepoProvider | MockRepoProvider {
   if (settings?.provider !== "git") {
-    return new MockRepoProvider({ cwd });
+    return new MockRepoProvider({
+      cwd,
+      ...(settings?.policy != null ? { policy: settings.policy } : {}),
+    });
   }
   const detection = detectGit(settings.command);
   if (!detection.available) {
@@ -188,7 +195,10 @@ export function selectRepoProvider(
         settings.command ?? "git"
       }' CLI was not found on PATH; falling back to the mock repo provider (draft-only). Install git to enable real branch/commit/PR operations.`,
     );
-    return new MockRepoProvider({ cwd });
+    return new MockRepoProvider({
+      cwd,
+      ...(settings.policy != null ? { policy: settings.policy } : {}),
+    });
   }
   return new GitRepoProvider({
     cwd,
@@ -196,5 +206,6 @@ export function selectRepoProvider(
     ...(settings.forgeCommand != null ? { forgeCommand: settings.forgeCommand } : {}),
     ...(settings.remote != null ? { remote: settings.remote } : {}),
     ...(settings.timeoutMs != null ? { timeoutMs: settings.timeoutMs } : {}),
+    ...(settings.policy != null ? { policy: settings.policy } : {}),
   });
 }

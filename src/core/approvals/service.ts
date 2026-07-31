@@ -21,6 +21,7 @@ export const APPROVAL_ACTIONS = [
   "create_branch",
   "commit",
   "push",
+  "direct_push_to_protected_branch",
   "open_pull_request",
   "execute_write_sql",
   "write_external_document",
@@ -35,13 +36,20 @@ export function isApprovalAction(value: string): value is ApprovalAction {
 /**
  * Maps spec-level action names to the looser action labels that may appear in a
  * config's `require_approval_for` / `prohibit` lists, so either vocabulary works.
+ *
+ * `push` and `direct_push_to_protected_branch` are DELIBERATELY separate action
+ * classes: `push` covers pushing a feature branch (gated, consentable), while
+ * `direct_push_to_protected_branch` is the categorically-prohibited default.
+ * Conflating them would make the default prohibition veto every feature-branch
+ * push — or worse, make a `prohibit: ["push"]` entry silently unenforceable.
  */
 const ACTION_ALIASES: Record<ApprovalAction, string[]> = {
   ticket_update: ["ticket_update", "update_ticket"],
   create_ticket: ["create_ticket"],
   create_branch: ["create_branch", "branch"],
   commit: ["commit"],
-  push: ["push", "direct_push_to_protected_branch"],
+  push: ["push"],
+  direct_push_to_protected_branch: ["direct_push_to_protected_branch"],
   open_pull_request: ["open_pull_request", "pr_open", "open_pr", "pull_request"],
   execute_write_sql: ["execute_write_sql", "warehouse_write"],
   write_external_document: ["write_external_document", "external_document"],
