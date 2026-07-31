@@ -77,6 +77,10 @@ policies:
   autonomy:
     level: draft_only
     auto_approve: []          # e.g. [commit, create_branch, pr_open]
+  # When true, any silent provider fallback (e.g. --warehouse snowflake degrading
+  # to the mock because `snow` is missing) is a hard failure (exit 1) instead of a
+  # warning — same as passing --strict-providers on every pipeline command.
+  strict_providers: false
   warehouse:
     read_only_by_default: true
     max_sample_rows: 100

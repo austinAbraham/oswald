@@ -204,14 +204,19 @@ describe("CLI: consent mode is structural (autonomy never leaks into the interac
 
 describe("CLI: selectProviders", () => {
   it("localOnly drops every provider", () => {
-    const p = selectProviders({ cwd: "/tmp", localOnly: true, ticket: true, repo: true });
+    const { providers: p } = selectProviders({
+      cwd: "/tmp",
+      localOnly: true,
+      ticket: true,
+      repo: true,
+    });
     expect(p.ticket).toBeUndefined();
     expect(p.repo).toBeUndefined();
     expect(p.warehouse).toBeUndefined();
   });
 
   it("wires only the requested providers", () => {
-    const p = selectProviders({ cwd: "/tmp", warehouse: "mock", repo: true });
+    const { providers: p } = selectProviders({ cwd: "/tmp", warehouse: "mock", repo: true });
     expect(p.warehouse).toBeDefined();
     expect(p.repo).toBeDefined();
     expect(p.ticket).toBeUndefined();
