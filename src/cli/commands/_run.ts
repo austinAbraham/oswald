@@ -5,7 +5,9 @@
  * update-ticket) funnels through {@link runTentacleCommand}. It:
  *   1. builds a fully-wired {@link TentacleContext} via `buildContext`,
  *   2. looks the tentacle up in the registry by id,
- *   3. runs it,
+ *   3. pre-flights the workflow transition (current phase → the tentacle's
+ *      `advancesTo`) and REFUSES an out-of-order command before any side
+ *      effect runs, then runs the tentacle,
  *   4. prints the STANDARD output block — what it did, the provider resolution
  *      table (requested vs resolved), where artifacts landed, and the suggested
  *      next command,
@@ -30,7 +32,10 @@ import type { TentacleContext, TentacleProviders } from "../../tentacles/base.js
 import { getTentacle } from "../../tentacles/registry.js";
 import type { AuditLedger } from "../../core/audit/index.js";
 import { readState, updateState } from "../../core/state/index.js";
-import { recommendNextCommand } from "../../core/workflow/index.js";
+import {
+  assertLegalTransition,
+  recommendNextCommand,
+} from "../../core/workflow/index.js";
 import { logger as defaultLogger, type Logger } from "../../core/logging/index.js";
 import { resolveConfig } from "./_config.js";
 import {
@@ -209,6 +214,12 @@ export async function runTentacleCommand(
       ...(args.audit ? { audit: args.audit } : {}),
     });
     phaseBefore = ctx.state.status.phase;
+
+    // Pre-flight the state machine BEFORE any side effect: an out-of-order
+    // command must refuse here — while nothing has been posted, written, or
+    // archived — not after the tentacle has already committed external writes.
+    // `advanceWorkflow` re-asserts the same rule afterwards as the backstop.
+    assertLegalTransition(ctx.state.status.phase, tentacle.advancesTo);
 
     // Persist the targeted ticket id into state so downstream commands and
     // `next --run` can recover it. (Tentacles advance the phase but do not own

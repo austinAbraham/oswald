@@ -16,9 +16,10 @@ import { resolveConfig } from "./_config.js";
 
 /**
  * Commands that take a `<ticket>` positional argument. `next --run` looks the
- * ticket up in state and supplies it when dispatching one of these.
+ * ticket up in state and supplies it when dispatching one of these; `run`
+ * supplies its explicit `<ticket>` argument.
  */
-const TICKET_COMMANDS = new Set([
+export const TICKET_COMMANDS = new Set([
   "clarify",
   "context",
   "eda",

@@ -124,6 +124,7 @@ const RUN = OPTED_IN && dbtCommand !== null;
           clock,
           ticket: { id: "AE-1234", provider: null, url: null },
         });
+        state.status.phase = "validating";
         await fs.mkdir(path.join(root, ".oswald"), { recursive: true });
         await writeState(state, ".oswald");
         await fs.writeFile(

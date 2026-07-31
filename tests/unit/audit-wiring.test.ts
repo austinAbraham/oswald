@@ -301,6 +301,22 @@ describe("audit wiring: runTentacleCommand step outcomes", () => {
       initStateIfMissing: true,
       logger,
     });
+    // The workflow enforces transition legality, so walk the real order:
+    // clarification and context must run before eda.
+    await runTentacleCommand({
+      id: "clarification",
+      command: "clarify",
+      cwd: root,
+      ticketId: "AE-1",
+      logger,
+    });
+    await runTentacleCommand({
+      id: "context",
+      command: "context",
+      cwd: root,
+      ticketId: "AE-1",
+      logger,
+    });
     const outcome = await runTentacleCommand({
       id: "eda",
       command: "eda",

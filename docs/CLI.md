@@ -47,7 +47,8 @@ Operator commands (`doctor`, `status`, `ship`, `compact`, `audit`, `brief`,
 `next`, `init`) use `0`/`1` (`doctor` returns `1` on any fail-status check;
 `ship`/`compact`/`brief` return `1` on a precondition failure; `audit verify`
 returns `1` on a broken hash chain; `status` is read-only and returns `0` even
-when the project is uninitialized).
+when the project is uninitialized). `run` extends the contract with one extra
+code: `3` = parked at an approval gate (see [`oswald run`](#oswald-run-ticket)).
 
 ---
 
@@ -144,6 +145,40 @@ exactly what to re-run (the parking command when known, else `validate`).
 artifacts and sets its own exit code. **Exit:** `0` when showing; otherwise the
 dispatched command's code.
 
+### `oswald run <ticket>`
+Single-command pipeline driver. Executes the recommended next step for the
+ticket (exactly one step, like `next --run` but pinned to an explicit ticket).
+With `--auto` it loops — read the phase, dispatch, repeat — streaming each
+step's standard output block, until a stop condition.
+
+| Option | Description |
+|--------|-------------|
+| `--auto` | keep executing steps until a terminal phase, a blocker, or an approval gate |
+| `--max-steps <n>` | safety cap on steps executed per `--auto` run (default `20`) |
+| `-C, --cwd <dir>` | project root |
+
+`--auto` stops at the first of:
+
+1. a **terminal phase** (`shipped`) → exit `0`;
+2. a **non-zero step** (`2` = the workflow parked in `blocked`, `1` = hard
+   error) → that code propagates;
+3. an **approval gate** → exit `3`. Auto mode **never** synthesizes consent
+   flags (`--yes`/`--apply`/`--post`/`--open`): when the next step's primary
+   deliverable is an approval-gated side effect (`build` → write dbt files,
+   `pr` → open the PR, `update-ticket` → post the update) the run parks in
+   front of it and prints `awaiting approval for <action>: run 'oswald <cmd>
+   <ticket> <consent flags>' to proceed`. Run that command yourself, or run
+   `oswald run <ticket>` (no `--auto`) to execute the step draft/dry-run only;
+4. the `--max-steps` cap → exit `1`.
+
+`run` refuses (exit `1`) when Oswald is not initialized, when no ticket has
+been ingested yet (intake needs real ticket content a driver must never
+fabricate — run `oswald intake <ticket> --from-file <path>` first), and when
+`<ticket>` differs from the ticket recorded in state.
+
+**Writes:** nothing itself; every dispatched step writes its own artifacts.
+**Exit:** `0` / `1` / `2` / `3` as above.
+
 ---
 
 ## Pipeline commands (workflow order)
@@ -154,6 +189,18 @@ validating → ready_for_pr → ready_for_ticket_update → shipped` (`blocked` 
 recoverable side state). Each prints a standard block: what it did, the
 provider resolution table, warnings, open questions, artifacts written, and the
 suggested next command. All return `0` / `1` / `2` per the table above.
+
+Transitions are **enforced**: a command run out of order (one whose completed
+phase the state machine cannot reach from the current phase, e.g. `plan`
+straight after `intake`) fails loudly with an `Illegal workflow transition`
+error (exit `1`) and leaves state untouched. The check is **pre-flighted
+before the command does any work** — an out-of-order command posts nothing to
+a ticket provider, writes no artifacts or project files, and archives nothing
+(and `advanceWorkflow` re-asserts the same rule afterwards as the backstop).
+Re-running the current phase's command is always allowed; the deliberate
+exceptions (skipping the optional `clarify`/`eda` steps, finalizing from
+`ready_for_pr`, shipping over documented limitations) live in one table in
+`src/core/workflow/states.ts`.
 
 ### `oswald intake [ticketOrInput]`
 Ingest a ticket and draft structured requirements. The positional is either a

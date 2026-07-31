@@ -289,6 +289,8 @@ export const designTentacle: Tentacle<
   description:
     "Convert business language into precise analytical definitions — metric formula, grain, dimensions, filters/exclusions, null behavior, late-arriving + SCD handling, and a reconciliation approach — drafting dbt/semantic-layer recommendations and tagging every unsourced rule as assumption/open_question.",
 
+  advancesTo: "planning",
+
   inputSchema: DesignInputSchema,
   outputSchema: DesignOutputSchema,
 

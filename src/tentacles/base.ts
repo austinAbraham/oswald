@@ -27,6 +27,7 @@ import {
   type OswaldState,
 } from "../core/state/index.js";
 import {
+  assertLegalTransition,
   recommendNextCommand,
   type WorkflowState,
 } from "../core/workflow/index.js";
@@ -178,6 +179,16 @@ export interface Tentacle<
   readonly id: string;
   readonly title: string;
   readonly description: string;
+
+  /**
+   * The phase a successful run advances the workflow into (the `phase` its
+   * `advanceWorkflow` patch carries on the success path — failure paths may
+   * land in `blocked`, which is reachable from every non-terminal phase).
+   * The CLI pre-flights `canTransition(current, advancesTo)` against this
+   * BEFORE running the tentacle, so an out-of-order command refuses without
+   * committing any side effect.
+   */
+  readonly advancesTo: WorkflowState;
 
   /** Validates the per-run options/input. */
   readonly inputSchema: Input;
@@ -332,6 +343,14 @@ function defaultConfigPath(projectRoot: string): string {
  * Tentacles call this at the end of `run` to advance the workflow. It re-reads
  * state from disk, applies the phase + command + optional requirements/artifact
  * patches, and writes it back (stamping `updated_at` from the injected clock).
+ *
+ * The state machine is ENFORCED here as the backstop: the patch may keep the
+ * current phase (an idempotent re-run of the phase's command) or make a move
+ * `canTransition` allows. Anything else throws a `WorkflowTransitionError`
+ * before any mutation, leaving state on disk untouched. Commands additionally
+ * PRE-FLIGHT the same assertion (via each tentacle's `advancesTo`) before any
+ * side effect runs, so an out-of-order command refuses before — not after —
+ * external posts or project-tree writes happen.
  */
 export interface AdvanceWorkflowPatch {
   /** The phase to move into (this tentacle's completed phase output). */
@@ -352,6 +371,10 @@ export async function advanceWorkflow(
 ): Promise<OswaldState> {
   const artifactDir = ctx.config.paths.artifact_dir || DEFAULT_ARTIFACT_DIR;
   const current = await readState(ctx.artifacts.root, artifactDir);
+
+  // Enforce state-machine legality BEFORE any bookkeeping: an illegal
+  // transition must leave state untouched.
+  assertLegalTransition(current.status.phase, patch.phase);
 
   // Persist content-hash baselines for every artifact written this run (the
   // drift checker's input). A rewrite with IDENTICAL content keeps its

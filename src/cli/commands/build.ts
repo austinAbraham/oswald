@@ -26,6 +26,7 @@ import { promises as fs } from "node:fs";
 import { z } from "zod";
 import type { Command } from "commander";
 import { buildContext, advanceWorkflow } from "../../tentacles/base.js";
+import { assertLegalTransition } from "../../core/workflow/index.js";
 import { policyFromConfig } from "../../core/approvals/index.js";
 import { pathExists } from "../../utils/fs.js";
 import { logger } from "../../core/logging/index.js";
@@ -102,6 +103,11 @@ export function registerBuild(program: Command): void {
           ticketId: ticket,
           options: {},
         });
+
+        // Pre-flight the state machine BEFORE any side effect: an out-of-order
+        // build must refuse here, while no model file has been written and no
+        // artifact touched (advanceWorkflow re-asserts this as the backstop).
+        assertLegalTransition(ctx.state.status.phase, "validating");
 
         // --- Read the implementation plan (required input). -----------------
         if (!(await ctx.artifacts.exists(IMPLEMENTATION_PLAN))) {
