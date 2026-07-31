@@ -14,13 +14,15 @@ import { registerPr } from "./pr.js";
 import { registerUpdateTicket } from "./update-ticket.js";
 import { registerShip } from "./ship.js";
 import { registerCompact } from "./compact.js";
+import { registerResume } from "./resume.js";
 
 /**
  * Register every CLI command onto the program, in workflow order.
  *
  * Pipeline commands (intake → … → update-ticket) are tentacle-backed via the
  * shared runner; build/ship/compact are deterministic non-tentacle commands;
- * init/doctor/next are operator commands.
+ * init/doctor/next are operator commands; resume is the blocked-recovery
+ * command (it re-runs the validate tentacle through the shared runner).
  */
 export function registerCommands(program: Command): void {
   // Operator / setup.
@@ -40,7 +42,8 @@ export function registerCommands(program: Command): void {
   registerUpdateTicket(program);
   registerShip(program);
 
-  // Maintenance + navigation.
+  // Maintenance + navigation + recovery.
   registerCompact(program);
   registerNext(program);
+  registerResume(program);
 }

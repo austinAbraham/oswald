@@ -70,9 +70,12 @@ describe("workflow: recommendNextCommand", () => {
     expect(recommendNextCommand("ready_for_ticket_update")).toBe("update-ticket");
   });
 
-  it("returns null for terminal states", () => {
+  it("returns null only for shipped (the one true dead-end)", () => {
     expect(recommendNextCommand("shipped")).toBeNull();
-    expect(recommendNextCommand("blocked")).toBeNull();
+  });
+
+  it("recommends resume from blocked (recovery, not a dead end)", () => {
+    expect(recommendNextCommand("blocked")).toBe("resume");
   });
 
   it("every state has a defined command mapping", () => {

@@ -6,7 +6,7 @@
  * expected to invoke it. Adapters turn these into runtime-specific command
  * prompts (slash commands, command-prompt markdown, etc.).
  *
- * Keep this in sync with `src/cli/commands/index.ts` — there are 15 commands.
+ * Keep this in sync with `src/cli/commands/index.ts` — there are 16 commands.
  */
 
 export interface CommandSpec {
@@ -26,7 +26,7 @@ export interface CommandSpec {
 }
 
 /**
- * The 15 Oswald commands, in workflow order. The `invoke` strings reference the
+ * The 16 Oswald commands, in workflow order. The `invoke` strings reference the
  * `oswald` CLI binary; adapters that cannot assume a global `oswald` binary
  * should document `npx oswald` / `node dist/cli/index.js` in their setup notes.
  */
@@ -167,6 +167,19 @@ export const OSWALD_COMMANDS: readonly CommandSpec[] = [
     invoke: "oswald next [--run]",
     details:
       "Inspect state and report the next command to run; with --run, execute it.",
+  },
+  {
+    name: "resume",
+    summary: "Recover from a blocked workflow by re-running the blocking check.",
+    group: "maintenance",
+    invoke: "oswald resume <ticket-id>",
+    details:
+      "Report the recorded blockers, re-run the validation gate that parked the " +
+      "workflow, and — on a pass — leave 'blocked' via a legal transition, restoring " +
+      "the pre-blocked phase when reachable. Single-shot: on continued failure the " +
+      "workflow stays 'blocked' (exit code 2). A block produced by a REAL external " +
+      "run (state records blocked_mode: external) requires --dbt — a local-only " +
+      "resume refuses to run and stays 'blocked'.",
   },
 ];
 

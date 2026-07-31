@@ -22,6 +22,7 @@ const TICKET_COMMANDS = new Set([
   "pr",
   "update-ticket",
   "ship",
+  "resume",
 ]);
 
 export function registerNext(program: Command): void {
@@ -38,10 +39,14 @@ export function registerNext(program: Command): void {
       const root = path.resolve(opts.cwd);
       let phase;
       let ticketId: string | null = null;
+      let blockers: string[] = [];
+      let externalBlock = false;
       try {
         const state = await readState(root);
         phase = state.status.phase;
         ticketId = state.ticket.id;
+        blockers = state.status.blockers;
+        externalBlock = state.status.blocked_mode === "external";
       } catch (err) {
         if (err instanceof StateError) {
           logger.warn("Oswald is not initialized here.");
@@ -55,6 +60,10 @@ export function registerNext(program: Command): void {
       const cmd = recommendNextCommand(phase);
       const successor = nextState(phase);
       logger.info(`current phase: ${phase}`);
+      if (phase === "blocked" && blockers.length > 0) {
+        logger.warn(`  blocked — ${blockers.length} blocker(s):`);
+        for (const b of blockers) logger.warn(`    - ${b}`);
+      }
 
       if (!cmd) {
         logger.success(`phase '${phase}' is terminal — nothing to run`);
@@ -62,7 +71,16 @@ export function registerNext(program: Command): void {
         return;
       }
 
-      logger.success(`recommended:   oswald ${cmd}`);
+      // A block produced by a REAL external run can only be cleared by an
+      // external re-run — the recommendation must carry `--dbt` (a local-only
+      // resume refuses and stays blocked).
+      const needsDbt = phase === "blocked" && externalBlock && cmd === "resume";
+      logger.success(`recommended:   oswald ${cmd}${needsDbt ? " --dbt" : ""}`);
+      if (needsDbt) {
+        logger.warn(
+          "  the block came from a REAL external run — resume needs '--dbt' to re-run at the same fidelity",
+        );
+      }
       if (successor) {
         logger.info(`  → advances toward phase '${successor}'`);
       }

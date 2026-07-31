@@ -667,6 +667,9 @@ export const validationTentacle: Tentacle<
           known_limitations: ARTIFACT_NAMES.limitations,
         },
         blockers: verdict.blockers,
+        // Record the fidelity of THIS blocking run so `oswald resume` never
+        // clears a block from a real external run with a local-only re-run.
+        blockedMode: willRunExternal ? "external" : "local",
       });
     }
 

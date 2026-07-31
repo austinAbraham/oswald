@@ -163,7 +163,14 @@ export async function runTentacleCommand(
     if (blocked) {
       log.warn(`  state: BLOCKED — ${state.status.blockers.length} blocker(s)`);
       for (const b of state.status.blockers) log.warn(`    - ${b}`);
-      log.info("  next:  resolve the blocker(s), then re-run validate");
+      // When the blocking run executed REAL external checks, the recovery hint
+      // must carry `--dbt`: a local-only resume cannot (and will refuse to)
+      // clear an external block.
+      const externalBlock = state.status.blocked_mode === "external";
+      const resumeCmd = `oswald resume${args.ticketId ? ` ${args.ticketId}` : ""}${externalBlock ? " --dbt" : ""}`;
+      log.info(
+        `  next:  resolve the blocker(s), then run '${resumeCmd}' to re-run the blocking check${externalBlock ? " (the block came from a REAL external run)" : ""}`,
+      );
     } else if (nextCommand) {
       log.info(`  next:  oswald ${nextCommand}`);
     } else {

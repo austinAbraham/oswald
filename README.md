@@ -267,6 +267,7 @@ stays green offline. `oswald doctor` reports whether `snow` was detected.
 | `ship <ticket>` | Finalize: verify validation + PR summary, archive intermediates, mark `shipped`. |
 | `compact` | Summarize artifacts into `current_context.md`; archive noisy intermediates. |
 | `next` | Show (or `--run`) the recommended next command from state. |
+| `resume <ticket>` | Recover from `blocked`: re-run the blocking check and, on a pass, restore the pre-blocked phase (`--dbt` for a real re-run; required when the block came from a real external run). |
 
 Every command accepts `-C, --cwd <dir>` to set the project root.
 
