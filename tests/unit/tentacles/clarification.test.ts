@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { promises as fs } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { buildContext } from "../../../src/tentacles/base.js";
+import { buildContext, type TentacleContext } from "../../../src/tentacles/base.js";
 import { intakeTentacle } from "../../../src/tentacles/intake/index.js";
 import { clarificationTentacle } from "../../../src/tentacles/clarification/index.js";
 import {
@@ -17,7 +17,7 @@ import {
 } from "../../../src/tentacles/clarification/analyze.js";
 import { MockTicketProvider } from "../../../src/tools/index.js";
 import { parseConfig } from "../../../src/core/config/index.js";
-import { readState } from "../../../src/core/state/index.js";
+import { readState, updateState } from "../../../src/core/state/index.js";
 import { fixedClock } from "../../../src/utils/time.js";
 
 const CLOCK = fixedClock("2026-06-22T00:00:00.000Z");
@@ -98,6 +98,15 @@ async function writeFixture(content: string): Promise<string> {
   const file = path.join(dir, "ticket.md");
   await fs.writeFile(file, content, "utf8");
   return file;
+}
+
+/** Move a freshly-seeded state into the phase the tentacle under test owns. */
+async function seedClarificationPhase(ctx: TentacleContext): Promise<void> {
+  ctx.state = await updateState(
+    ctx.artifacts.root,
+    (s) => ({ ...s, status: { ...s.status, phase: "clarification" } }),
+    { clock: CLOCK },
+  );
 }
 
 /** Run intake into a fresh root, returning the root for a clarification run. */
@@ -418,6 +427,7 @@ describe("clarification tentacle: degraded (no intake artifacts)", () => {
       ticketId: "DEMO-5",
       providers: { ticket: provider },
     });
+    await seedClarificationPhase(ctx);
     const result = await clarificationTentacle.run(ctx);
 
     expect(result.output?.degraded).toBe(true);
@@ -433,6 +443,7 @@ describe("clarification tentacle: degraded (no intake artifacts)", () => {
       clock: CLOCK,
       initStateIfMissing: true,
     });
+    await seedClarificationPhase(ctx);
     const result = await clarificationTentacle.run(ctx);
 
     expect(result.output?.degraded).toBe(true);

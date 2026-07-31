@@ -11,6 +11,7 @@ export {
   PoliciesConfigSchema,
   WarehousePolicySchema,
   PrivacyPolicySchema,
+  ReadinessPolicySchema,
   type OswaldConfig,
   type ProjectConfig,
   type RuntimeConfig,
@@ -20,6 +21,7 @@ export {
   type WarehouseConfig,
   type RepoConfig,
   type McpServerConfig,
+  type ReadinessPolicy,
   type PoliciesConfig,
 } from "./schema.js";
 export {

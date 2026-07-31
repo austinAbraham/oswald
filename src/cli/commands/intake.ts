@@ -8,6 +8,8 @@ const OptionsSchema = z.object({
   fromFile: z.string().optional(),
   provider: z.enum(["jira", "github", "local", "mock"]).optional(),
   output: z.string().optional(),
+  json: z.boolean().optional(),
+  strictProviders: z.boolean().optional(),
   cwd: z.string(),
 });
 
@@ -22,6 +24,8 @@ export function registerIntake(program: Command): void {
     .option("--from-file <path>", "read raw ticket markdown from a local file")
     .option("--provider <name>", "ticket source: jira|github|local|mock")
     .option("--output <dir>", "artifact output dir override (advisory)")
+    .option("--json", "emit one machine-readable JSON step report on stdout (CI mode)")
+    .option("--strict-providers", "fail (exit 1) instead of falling back to a mock provider")
     .option("-C, --cwd <dir>", "project root", process.cwd())
     .addHelpText(
       "after",
@@ -32,11 +36,13 @@ export function registerIntake(program: Command): void {
       const cwd = path.resolve(opts.cwd);
 
       // A provider was requested → wire a (mock) ticket provider; otherwise the
-      // local-file / inline path needs no provider at all.
+      // local-file / inline path needs no provider at all. The NAMED source is
+      // threaded through so the resolution report shows e.g. jira→MOCK.
       const wantsProvider = Boolean(opts.provider && opts.provider !== "local");
-      const providers = selectProviders({
+      const { providers, resolution } = selectProviders({
         cwd,
         ticket: wantsProvider,
+        ...(wantsProvider && opts.provider ? { ticketProvider: opts.provider } : {}),
       });
 
       // Distinguish "looks like a ticket id" from "inline pasted text". A
@@ -63,7 +69,10 @@ export function registerIntake(program: Command): void {
         ...(ticketId ? { ticketId } : {}),
         options,
         providers,
+        providerResolution: resolution,
+        ...(opts.strictProviders ? { strictProviders: true } : {}),
         initStateIfMissing: true,
+        json: Boolean(opts.json),
       });
       process.exitCode = exitCode;
     });

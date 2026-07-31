@@ -51,6 +51,7 @@ async function makeProject(): Promise<string> {
     clock: CLOCK,
     ticket: { id: "AE-1234", provider: null, url: null },
   });
+  state.status.phase = "validating";
   await fs.mkdir(path.join(dir, ".oswald"), { recursive: true });
   await writeState(state, ".oswald");
   // Acceptance criteria the dbt run is expected to satisfy.

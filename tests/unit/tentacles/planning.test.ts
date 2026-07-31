@@ -2,10 +2,10 @@ import { describe, it, expect, afterEach } from "vitest";
 import { promises as fs } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { buildContext } from "../../../src/tentacles/base.js";
+import { buildContext, type TentacleContext } from "../../../src/tentacles/base.js";
 import { planningTentacle } from "../../../src/tentacles/planning/index.js";
 import { parseConfig } from "../../../src/core/config/index.js";
-import { readState } from "../../../src/core/state/index.js";
+import { readState, updateState } from "../../../src/core/state/index.js";
 import { fixedClock } from "../../../src/utils/time.js";
 
 const CLOCK = fixedClock("2026-06-22T00:00:00.000Z");
@@ -46,6 +46,15 @@ const ACCEPTANCE_MD = `# Acceptance Criteria
 3. Each active customer has at least one charge in the period
 `;
 
+/** Move a freshly-seeded state into the phase the tentacle under test owns. */
+async function seedPlanningPhase(ctx: TentacleContext): Promise<void> {
+  ctx.state = await updateState(
+    ctx.artifacts.root,
+    (s) => ({ ...s, status: { ...s.status, phase: "planning" } }),
+    { clock: CLOCK },
+  );
+}
+
 /** Seed prior artifacts directly via the ArtifactManager, then build context. */
 async function seededContext(opts: {
   root: string;
@@ -60,7 +69,8 @@ async function seededContext(opts: {
     initStateIfMissing: true,
     ticketId: "DEMO-1",
   });
-  if (opts.design) await ctx.artifacts.write("design.md", opts.design);
+  await seedPlanningPhase(ctx);
+  if (opts.design) await ctx.artifacts.write("semantic_model_plan.md", opts.design);
   if (opts.acceptance) await ctx.artifacts.write("acceptance_criteria.md", opts.acceptance);
   if (opts.intake) await ctx.artifacts.write("intake.md", opts.intake);
   return ctx;
@@ -238,6 +248,7 @@ describe("planning tentacle: degraded inputs", () => {
       clock: CLOCK,
       initStateIfMissing: true,
     });
+    await seedPlanningPhase(ctx);
 
     const result = await planningTentacle.run(ctx);
 
@@ -263,6 +274,7 @@ describe("planning tentacle: degraded inputs", () => {
           "Build dim_products from shopify.products. Grain: one row per product.",
       },
     });
+    await seedPlanningPhase(ctx);
 
     const result = await planningTentacle.run(ctx);
     expect(result.output?.pattern.id).toBe("dimension");

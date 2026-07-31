@@ -11,6 +11,21 @@ export {
 } from "./intake/index.js";
 
 export {
+  scoreReadiness,
+  buildMissingInfoQuestions,
+  renderReadinessTable,
+  READINESS_DIMENSIONS,
+  READINESS_DIMENSION_IDS,
+  isReadinessDimensionId,
+  type ReadinessSignals,
+  type ReadinessScorecard,
+  type ReadinessDimensionDefinition,
+  type ReadinessDimensionResult,
+  type ReadinessDimensionId,
+  type MissingInfoQuestion,
+} from "./intake/readiness.js";
+
+export {
   clarificationTentacle,
   ClarificationInputSchema,
   ClarificationOutputSchema,

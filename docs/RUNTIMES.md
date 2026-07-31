@@ -44,7 +44,7 @@ The "Slash cmds / Agents / Hooks / MCP" columns are exactly what each adapter's
 
 ### Generic CLI (`generic`) — Supported
 The always-available fallback. Writes a command-prompt markdown file for each of
-the 15 Oswald commands under `.oswald/runtime/generic/commands/<command>.md`,
+the 16 Oswald commands under `.oswald/runtime/generic/commands/<command>.md`,
 plus a `README.md` index. Each file explains what the command does and how to
 invoke the CLI (`oswald <command>`, or `npx oswald …` / `node dist/cli/index.js
 …` when the binary is not on PATH). Works in any shell or runtime.

@@ -8,7 +8,9 @@
 export const ARTIFACT_FILES = {
   state: "state.yml",
   intake: "intake.md",
+  readiness: "readiness.md",
   clarifications: "clarifications.md",
+  missingInfoRequest: "missing_information_request.md",
   context: "context.md",
   eda: "eda.md",
   design: "design.md",
@@ -18,7 +20,8 @@ export const ARTIFACT_FILES = {
   pr: "pr.md",
   ticketUpdate: "ticket-update.md",
   ship: "ship.md",
-  audit: "audit.log",
+  brief: "brief.md",
+  audit: "audit.jsonl",
 } as const;
 
 export type ArtifactKey = keyof typeof ARTIFACT_FILES;

@@ -1,9 +1,10 @@
 import * as path from "node:path";
 import { z } from "zod";
 import type { Command } from "commander";
-import { runTentacleCommand } from "./_run.js";
+import { runTentacleCommand, failureStepReport } from "./_run.js";
 import { selectProviders, type SnowflakeSettings } from "./_providers.js";
 import { resolveConfig } from "./_config.js";
+import { AuditLedger } from "../../core/audit/index.js";
 import { logger } from "../../core/logging/index.js";
 
 const OptionsSchema = z.object({
@@ -15,6 +16,8 @@ const OptionsSchema = z.object({
   connection: z.string().optional(),
   warehouseCommand: z.string().optional(),
   queryTimeout: z.coerce.number().int().positive().optional(),
+  json: z.boolean().optional(),
+  strictProviders: z.boolean().optional(),
   cwd: z.string(),
 });
 
@@ -31,6 +34,8 @@ export function registerEda(program: Command): void {
     .option("--connection <name>", "snow connection NAME (required for --execute with snowflake)")
     .option("--warehouse-command <cmd>", "warehouse CLI invocation (default: 'snow')")
     .option("--query-timeout <ms>", "per-query subprocess timeout in ms")
+    .option("--json", "emit one machine-readable JSON step report on stdout (CI mode)")
+    .option("--strict-providers", "fail (exit 1) instead of falling back to a mock provider")
     .option("-C, --cwd <dir>", "project root", process.cwd())
     .addHelpText(
       "after",
@@ -61,14 +66,38 @@ export function registerEda(program: Command): void {
       // Real Snowflake execution requires an explicit connection NAME. Omission
       // is only tolerated in dry-run (no queries run); refuse --execute clearly.
       if (warehouse === "snowflake" && execute && !connection) {
-        logger.error(
-          "eda --warehouse snowflake --execute requires a connection: pass --connection <name> or set warehouse.connection in oswald.yml. Only a connection NAME is used (never credentials).",
-        );
+        const message =
+          "eda --warehouse snowflake --execute requires a connection: pass --connection <name> or set warehouse.connection in oswald.yml. Only a connection NAME is used (never credentials).";
+        logger.error(message);
+        if (opts.json) {
+          // Keep the one-JSON-document contract even on precondition refusal.
+          console.log(
+            JSON.stringify(
+              failureStepReport({
+                command: "eda",
+                ticket,
+                exitCode: 2,
+                error: message,
+              }),
+            ),
+          );
+        }
         process.exitCode = 2;
         return;
       }
 
-      const providers = selectProviders({ cwd, warehouse, snowflake });
+      // One ledger instance owns the hash chain for this run: provider
+      // fallbacks recorded here and the tentacle's events share it.
+      const audit = new AuditLedger(cwd, {
+        artifactDir: config.paths.artifact_dir,
+        logger,
+      });
+      const { providers, resolution } = selectProviders({
+        cwd,
+        warehouse,
+        snowflake,
+        audit,
+      });
 
       const options: Record<string, unknown> = { execute };
       if (opts.tables) {
@@ -85,6 +114,10 @@ export function registerEda(program: Command): void {
         ticketId: ticket,
         options,
         providers,
+        json: Boolean(opts.json),
+        audit,
+        providerResolution: resolution,
+        ...(opts.strictProviders ? { strictProviders: true } : {}),
       });
       process.exitCode = exitCode;
     });

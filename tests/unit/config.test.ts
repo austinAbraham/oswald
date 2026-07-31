@@ -75,6 +75,58 @@ describe("config: parseConfig", () => {
     expect(config.policies.warehouse.max_sample_rows).toBe(50);
     expect(config.mcp_servers.dbt.command).toBe("uvx");
   });
+
+  it("defaults policies.autonomy to draft_only with an empty auto_approve", () => {
+    const config = parseConfig({ project: { name: "demo" } });
+    expect(config.policies.autonomy.level).toBe("draft_only");
+    expect(config.policies.autonomy.auto_approve).toEqual([]);
+  });
+
+  it("accepts an auto_safe autonomy block", () => {
+    const config = parseConfig({
+      project: { name: "demo" },
+      policies: {
+        autonomy: { level: "auto_safe", auto_approve: ["commit", "pr_open"] },
+      },
+    });
+    expect(config.policies.autonomy.level).toBe("auto_safe");
+    expect(config.policies.autonomy.auto_approve).toEqual(["commit", "pr_open"]);
+    expect(config.policies.prohibit).toEqual(["direct_push_to_protected_branch"]);
+  });
+
+  it("rejects an unknown autonomy level", () => {
+    expect(() =>
+      parseConfig({
+        project: { name: "demo" },
+        policies: { autonomy: { level: "auto_yolo" } },
+      }),
+    ).toThrow(ConfigError);
+  });
+
+  it("rejects 'push' in autonomy.auto_approve (hard floor)", () => {
+    expect(() =>
+      parseConfig({
+        project: { name: "demo" },
+        policies: {
+          autonomy: { level: "auto_safe", auto_approve: ["push"] },
+        },
+      }),
+    ).toThrow(ConfigError);
+  });
+
+  it("rejects the direct_push_to_protected_branch alias in auto_approve, case-insensitively", () => {
+    expect(() =>
+      parseConfig({
+        project: { name: "demo" },
+        policies: {
+          autonomy: {
+            level: "auto_safe",
+            auto_approve: [" Direct_Push_To_Protected_Branch "],
+          },
+        },
+      }),
+    ).toThrow(ConfigError);
+  });
 });
 
 describe("config: loadConfig", () => {

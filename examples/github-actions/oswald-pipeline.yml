@@ -1,0 +1,137 @@
+# Oswald in CI — draft-only pipeline recipe.
+#
+# Runs the Oswald pipeline headlessly on the bundled sample ticket using the
+# machine-readable `--json` step reports (one JSON document per step on stdout —
+# see docs/CLI.md, "CI / machine output"). Safety posture in CI:
+#   - everything is DRAFT-ONLY: no `--yes`/`--post`/`--open`/`--apply` is ever
+#     passed, so no side effect can run (writes are default-deny; `--draft`
+#     forces drafts; `build` stays a dry-run change preview);
+#   - the warehouse is the offline mock and EDA stays dry-run;
+#   - exit codes follow the 0/1/2 contract: a hard error (1) fails its step, and
+#     a BLOCKED workflow (2) fails the job loudly so a human looks at it.
+#
+# On this sample ticket `oswald validate` parks the workflow in `blocked`
+# (acceptance checks are deferred without a real dbt sandbox) — that is the
+# point of the demo: the job fails on exit 2 and uploads `.oswald/` so you can
+# read the blockers. Copy this file into `.github/workflows/` and adapt the
+# ticket, triggers, and steps to your project.
+name: oswald-pipeline
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  oswald-draft-pipeline:
+    name: oswald pipeline (draft-only, sample ticket)
+    runs-on: ubuntu-latest
+    env:
+      TICKET: AE-1234
+      REPORTS: oswald-step-reports
+    defaults:
+      run:
+        # `bash` here means `-eo pipefail`: any non-zero exit fails the step.
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Build + install Oswald from THIS checkout so the workflow always runs
+      # the code the in-repo docs describe. The published package can lag —
+      # `--json` first ships in a release NEWER than 0.1.4, so an unpinned
+      # `npm install -g @oswald-ai/oswald-core` may fail every step with
+      # `error: unknown option '--json'`. When copying this recipe into your
+      # own project, install from the registry instead and PIN a version that
+      # ships `--json` (see docs/CLI.md, "CI / machine output").
+      - name: Install Oswald (from this checkout)
+        run: |
+          npm ci
+          npm run build
+          npm install -g .
+
+      - name: Prepare step-report dir
+        run: mkdir -p "$REPORTS"
+
+      - name: Intake (sample ticket)
+        run: |
+          oswald intake "$TICKET" --from-file examples/tickets/sample-retention-ticket.md --json > "$REPORTS/intake.json"
+          cat "$REPORTS/intake.json"
+
+      - name: Clarify (draft-only)
+        run: |
+          oswald clarify "$TICKET" --draft-comment --json > "$REPORTS/clarify.json"
+          cat "$REPORTS/clarify.json"
+
+      - name: Context (local-only)
+        run: |
+          oswald context "$TICKET" --local-only --json > "$REPORTS/context.json"
+          cat "$REPORTS/context.json"
+
+      - name: EDA (mock warehouse, dry-run)
+        run: |
+          oswald eda "$TICKET" --warehouse mock --dry-run --json > "$REPORTS/eda.json"
+          cat "$REPORTS/eda.json"
+
+      - name: Design
+        run: |
+          oswald design "$TICKET" --json > "$REPORTS/design.json"
+          cat "$REPORTS/design.json"
+
+      - name: Plan
+        run: |
+          oswald plan "$TICKET" --json > "$REPORTS/plan.json"
+          cat "$REPORTS/plan.json"
+
+      # No `--apply` (and no `--yes`): build stays a dry-run change preview and
+      # writes NOTHING into the project tree.
+      - name: Build (dry-run change preview)
+        run: |
+          oswald build "$TICKET" --json > "$REPORTS/build.json"
+          cat "$REPORTS/build.json"
+
+      # Exit 2 = the workflow is BLOCKED (not a crash: artifacts are still
+      # written). Surface the blockers as a job error and fail so automation
+      # halts and a human resolves them.
+      - name: Validate (fails the job on exit 2 = BLOCKED)
+        run: |
+          set +e
+          oswald validate "$TICKET" --json > "$REPORTS/validate.json"
+          code=$?
+          set -e
+          cat "$REPORTS/validate.json"
+          if [ "$code" -eq 2 ]; then
+            blockers=$(jq -r '.blockers | join("; ")' "$REPORTS/validate.json")
+            echo "::error title=Oswald workflow BLOCKED::${blockers:-see validate.json}"
+          fi
+          exit "$code"
+
+      - name: PR summary (draft-only)
+        if: success()
+        run: |
+          oswald pr "$TICKET" --draft --json > "$REPORTS/pr.json"
+          cat "$REPORTS/pr.json"
+
+      - name: Ticket update (draft-only)
+        if: success()
+        run: |
+          oswald update-ticket "$TICKET" --draft --json > "$REPORTS/update-ticket.json"
+          cat "$REPORTS/update-ticket.json"
+
+      # Always upload the artifact dir + step reports, even (especially) when a
+      # step blocked or failed — that is where the evidence lives.
+      - name: Upload .oswald artifacts + step reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: oswald-artifacts
+          path: |
+            .oswald/
+            oswald-step-reports/
+          if-no-files-found: warn

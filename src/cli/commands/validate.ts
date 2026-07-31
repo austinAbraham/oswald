@@ -10,6 +10,7 @@ const OptionsSchema = z.object({
   dbtProjectDir: z.string().optional(),
   dbtCommand: z.string().optional(),
   dbtTarget: z.string().optional(),
+  json: z.boolean().optional(),
   cwd: z.string(),
 });
 
@@ -31,6 +32,7 @@ export function registerValidate(program: Command): void {
     .option("--dbt-project-dir <dir>", "explicit dbt project dir (else auto-detected)")
     .option("--dbt-command <cmd>", "dbt invocation (e.g. 'uvx --from dbt-core --with dbt-duckdb dbt')")
     .option("--dbt-target <target>", "dbt target to build/test against (must look like a sandbox)")
+    .option("--json", "emit one machine-readable JSON step report on stdout (CI mode)")
     .option("-C, --cwd <dir>", "project root", process.cwd())
     .addHelpText(
       "after",
@@ -65,6 +67,7 @@ export function registerValidate(program: Command): void {
         cwd,
         ticketId: ticket,
         options,
+        json: Boolean(opts.json),
       });
       process.exitCode = exitCode;
     });

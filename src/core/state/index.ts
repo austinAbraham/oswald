@@ -1,13 +1,17 @@
 export {
   OswaldStateSchema,
   STATE_VERSION,
+  BLOCKED_MODES,
+  type BlockedMode,
   type OswaldState,
   type ToolStatus,
   type StateProject,
   type StateTicket,
   type StateStatus,
+  type StateReadiness,
   type StateRequirements,
   type StatePolicy,
+  type StateArtifactHash,
   type StateTimestamps,
 } from "./schema.js";
 export {

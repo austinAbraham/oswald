@@ -8,6 +8,7 @@
  * on-disk config (`~/.snowflake/connections.toml`). Credentials never enter
  * argv, env, logs, or artifacts.
  */
+import type { AuditSink } from "../../core/audit/ledger.js";
 import type { SqlSafetyOptions } from "../../core/policy/sql-safety.js";
 
 /**
@@ -83,6 +84,13 @@ export interface SnowflakeProviderOptions {
   sql?: SqlSafetyOptions;
   /** Whether PII redaction is enabled (from privacy policy). Default true. */
   maskSensitive?: boolean;
+  /**
+   * Optional audit sink. When present, the provider's internal read-only gate
+   * records every validation verdict AND every statement the provider spawns
+   * (health probes, SHOW/DESCRIBE/information_schema metadata, EXPLAIN, and
+   * executed EDA SQL) — statement hash + outcome only, never raw SQL.
+   */
+  audit?: AuditSink;
   /** Injectable runner (tests). Defaults to the real {@link runSnowQuery}. */
   runner?: SnowRunner;
 }
