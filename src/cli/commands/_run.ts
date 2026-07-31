@@ -49,6 +49,12 @@ export interface ApprovalFlags {
  * `--draft` always wins (forces draft-only). Otherwise any of `--yes/--post/
  * --open/--apply` grants consent. The ApprovalService still independently
  * checks policy, so consent here is necessary but never sufficient.
+ *
+ * The returned boolean is always explicit: `false` reaches the
+ * ApprovalService as an explicit decline, which also blocks policy-granted
+ * consent (`policies.autonomy.auto_approve`) — so `--draft` forces draft-only
+ * regardless of policy, and autonomy applies only to callers that pass no
+ * consent signal at all (e.g. a future autonomous runner).
  */
 export function resolveConsent(flags: ApprovalFlags): boolean {
   if (flags.draft) return false;

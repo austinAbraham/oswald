@@ -99,10 +99,14 @@ Three deterministic, defense-in-depth gates, all exported from `policy/index.ts`
 
 ### Approvals (`core/approvals`)
 
-`ApprovalService.requireApproval(action, { yes, policy, reason })` is the single
-human-in-the-loop gate. It is **default-deny**: a side-effecting action proceeds
-only when the caller supplies explicit `yes: true` **and** the policy permits it
+`ApprovalService.requireApproval(action, { yes, draft, policy, reason })` is the
+single human-in-the-loop gate. It is **default-deny**: a side-effecting action
+proceeds only when consent is supplied **and** the policy permits it
 (`require_approval_for` gates an action; `prohibit` forbids it outright).
+Consent comes from an explicit `yes: true` or — for callers that pass no
+explicit signal — from `policies.autonomy` (`level: auto_safe` +
+`auto_approve`); each decision records its consent source (`flag` / `policy` /
+`none`), `prohibit` beats every consent source, and `draft` vetoes them all.
 Action classes: `ticket_update`, `create_ticket`, `create_branch`, `commit`,
 `push`, `open_pull_request`, `execute_write_sql`, `write_external_document`,
 with alias mapping so either config vocabulary works. `policyFromConfig` adapts

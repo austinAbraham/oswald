@@ -15,7 +15,10 @@ The binary is `oswald` (see `package.json` `bin`). When it is not on `PATH`, use
 - **State** lives in `.oswald/state.yml`; the audit trail in `.oswald/audit.log`.
 - **Consent flags are never defaults.** Writes are default-deny; a `--yes` /
   `--post` / `--open` / `--apply` is required, and `--draft` always forces
-  draft-only. See [SECURITY_MODEL.md](./SECURITY_MODEL.md#approval-gates).
+  draft-only — including over any `policies.autonomy` grant. (The
+  `policies.autonomy` block can pre-approve specific action classes for
+  callers that pass no consent flag at all; the `policies.prohibit` list still
+  always wins.) See [SECURITY_MODEL.md](./SECURITY_MODEL.md#approval-gates).
 
 ## Exit codes
 

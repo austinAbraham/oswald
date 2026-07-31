@@ -3,15 +3,22 @@
  *
  * Oswald's safety posture is DEFAULT-DENY for writes. A write only proceeds when
  * BOTH conditions hold:
- *   1. an explicit `yes` is supplied by the caller (e.g. a `--yes` flag, never a
- *      default), AND
+ *   1. consent is supplied — either an explicit `yes` from the caller (e.g. a
+ *      `--yes` flag, never a default) or, for callers that pass no explicit
+ *      signal at all, a policy grant via `policies.autonomy` (level
+ *      `auto_safe` + the action listed in `auto_approve`), AND
  *   2. the configured policy permits that action class
  *      (`config.policies.require_approval_for` lists actions that are *gated*;
  *      `config.policies.prohibit` lists actions that are *never* allowed).
  *
- * In non-interactive / test mode there is no prompt: absent an explicit `yes`,
- * the action is denied. This keeps tests deterministic and makes the autonomous
- * runtime safe by construction.
+ * Policy-granted consent is deliberately the weakest source: it applies only
+ * when the caller expressed no explicit signal (`yes` undefined), an explicit
+ * `yes: false` (what `--draft` collapses to) or `draft: true` always vetoes it,
+ * and the `prohibit` list beats it unconditionally.
+ *
+ * In non-interactive / test mode there is no prompt: absent consent from a flag
+ * or the policy, the action is denied. This keeps tests deterministic and makes
+ * the autonomous runtime safe by construction.
  */
 
 /** The fixed set of side-effecting action classes Oswald can gate. */
@@ -47,16 +54,41 @@ const ACTION_ALIASES: Record<ApprovalAction, string[]> = {
   write_external_document: ["write_external_document", "external_document"],
 };
 
+/**
+ * How much consent the policy itself may grant. `draft_only` (the default)
+ * grants nothing — `autoApprove` is ignored. `auto_safe` lets the policy
+ * consent to the actions listed in `autoApprove`, never overriding `prohibit`.
+ */
+export type AutonomyLevel = "draft_only" | "auto_safe";
+
 export interface ApprovalPolicy {
   /** Actions that require explicit approval to proceed (the gated set). */
   requireApprovalFor: string[];
   /** Actions that are categorically prohibited regardless of approval. */
   prohibit: string[];
+  /** Autonomy tier. Absent means `draft_only` (policy grants no consent). */
+  autonomyLevel?: AutonomyLevel;
+  /**
+   * Action classes the policy consents to when `autonomyLevel` is
+   * `auto_safe`. Same vocabulary/aliases as the other two lists. Ignored at
+   * `draft_only`; never beats `prohibit`.
+   */
+  autoApprove?: string[];
 }
 
 export interface RequireApprovalOptions {
-  /** Explicit caller consent. Must be literally true to allow a write. */
+  /**
+   * Explicit caller consent. `true` allows; `false` is an explicit decline
+   * (what `--draft` collapses to via `resolveConsent`) and also blocks
+   * policy-granted consent; `undefined` means "no explicit signal", letting
+   * the policy speak.
+   */
   yes?: boolean;
+  /**
+   * Force draft-only: vetoes every consent source, including an explicit
+   * `yes` and policy auto-approval. Mirrors the `--draft` flag.
+   */
+  draft?: boolean;
   /** The active policy (from config). */
   policy: ApprovalPolicy;
   /** Optional human-readable context for the audit trail. */
@@ -65,12 +97,17 @@ export interface RequireApprovalOptions {
 
 export type ApprovalDecision = "allowed" | "denied" | "prohibited";
 
+/** Where the consent behind a decision came from (`none` when not allowed). */
+export type ConsentSource = "flag" | "policy" | "none";
+
 export interface ApprovalResult {
   action: ApprovalAction;
   decision: ApprovalDecision;
   allowed: boolean;
   /** Why the decision was made. */
   reason: string;
+  /** Whether consent came from an explicit flag or the autonomy policy. */
+  consentSource: ConsentSource;
 }
 
 function matchesAny(action: ApprovalAction, list: string[]): boolean {
@@ -82,20 +119,24 @@ function matchesAny(action: ApprovalAction, list: string[]): boolean {
 /**
  * Decide whether a side-effecting action may proceed.
  *
- * Decision table:
- *  - prohibited list match → `prohibited` (never allowed)
- *  - gated by policy and no explicit `yes` → `denied`
- *  - gated by policy and explicit `yes` → `allowed`
- *  - not gated (not in require_approval_for) → still requires `yes` for writes:
- *    we DEFAULT-DENY any side-effecting action without explicit consent, even if
- *    the policy did not list it. (Fail closed.)
+ * Decision table (top wins):
+ *  - prohibited list match → `prohibited` (never allowed — beats every consent
+ *    source, including autonomy auto-approval)
+ *  - `draft: true` → `denied` (draft-only vetoes flags AND policy consent)
+ *  - explicit `yes: true` → `allowed` (consent source `flag`)
+ *  - explicit `yes: false` → `denied` (an explicit decline — what `--draft`
+ *    collapses to — blocks policy-granted consent too)
+ *  - no explicit signal + autonomy level `auto_safe` + action in
+ *    `auto_approve` → `allowed` (consent source `policy`)
+ *  - otherwise → `denied`: we DEFAULT-DENY any side-effecting action without
+ *    consent, even if the policy did not list it. (Fail closed.)
  */
 export class ApprovalService {
   requireApproval(
     action: ApprovalAction,
     options: RequireApprovalOptions,
   ): ApprovalResult {
-    const { yes, policy } = options;
+    const { yes, draft, policy } = options;
 
     if (matchesAny(action, policy.prohibit)) {
       return {
@@ -103,29 +144,56 @@ export class ApprovalService {
         decision: "prohibited",
         allowed: false,
         reason: `Action '${action}' is prohibited by policy (policies.prohibit).`,
+        consentSource: "none",
       };
     }
 
     const isGated = matchesAny(action, policy.requireApprovalFor);
 
-    if (yes !== true) {
+    if (draft === true) {
       return {
         action,
         decision: "denied",
         allowed: false,
+        reason: `Action '${action}' is draft-only for this run (--draft); consent withheld regardless of policy.`,
+        consentSource: "none",
+      };
+    }
+
+    if (yes === true) {
+      return {
+        action,
+        decision: "allowed",
+        allowed: true,
         reason: isGated
-          ? `Action '${action}' requires approval; no explicit consent supplied (default-deny).`
-          : `Action '${action}' is a side-effecting write; explicit consent required (default-deny).`,
+          ? `Action '${action}' approved with explicit consent.`
+          : `Action '${action}' permitted with explicit consent (not separately gated).`,
+        consentSource: "flag",
+      };
+    }
+
+    if (
+      yes === undefined &&
+      policy.autonomyLevel === "auto_safe" &&
+      matchesAny(action, policy.autoApprove ?? [])
+    ) {
+      return {
+        action,
+        decision: "allowed",
+        allowed: true,
+        reason: `Action '${action}' auto-approved by policy: autonomy.auto_approve (level 'auto_safe').`,
+        consentSource: "policy",
       };
     }
 
     return {
       action,
-      decision: "allowed",
-      allowed: true,
+      decision: "denied",
+      allowed: false,
       reason: isGated
-        ? `Action '${action}' approved with explicit consent.`
-        : `Action '${action}' permitted with explicit consent (not separately gated).`,
+        ? `Action '${action}' requires approval; no explicit consent supplied (default-deny).`
+        : `Action '${action}' is a side-effecting write; explicit consent required (default-deny).`,
+      consentSource: "none",
     };
   }
 
@@ -155,9 +223,16 @@ export class ApprovalDeniedError extends Error {
 export function policyFromConfig(policies: {
   require_approval_for: string[];
   prohibit: string[];
+  autonomy?: { level: AutonomyLevel; auto_approve: string[] };
 }): ApprovalPolicy {
   return {
     requireApprovalFor: policies.require_approval_for,
     prohibit: policies.prohibit,
+    ...(policies.autonomy
+      ? {
+          autonomyLevel: policies.autonomy.level,
+          autoApprove: policies.autonomy.auto_approve,
+        }
+      : {}),
   };
 }
