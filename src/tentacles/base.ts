@@ -27,7 +27,9 @@ import {
   type OswaldState,
 } from "../core/state/index.js";
 import {
+  canTransition,
   recommendNextCommand,
+  WorkflowTransitionError,
   type WorkflowState,
 } from "../core/workflow/index.js";
 import { SqlSafetyValidator } from "../core/policy/sql-safety.js";
@@ -300,6 +302,11 @@ function defaultConfigPath(projectRoot: string): string {
  * Tentacles call this at the end of `run` to advance the workflow. It re-reads
  * state from disk, applies the phase + command + optional requirements/artifact
  * patches, and writes it back (stamping `updated_at` from the injected clock).
+ *
+ * The state machine is ENFORCED here: the patch may keep the current phase
+ * (an idempotent re-run of the phase's command) or make a move `canTransition`
+ * allows. Anything else throws a {@link WorkflowTransitionError} before any
+ * mutation, leaving state on disk untouched.
  */
 export interface AdvanceWorkflowPatch {
   /** The phase to move into (this tentacle's completed phase output). */
@@ -320,6 +327,11 @@ export async function advanceWorkflow(
 ): Promise<OswaldState> {
   const artifactDir = ctx.config.paths.artifact_dir || DEFAULT_ARTIFACT_DIR;
   const current = await readState(ctx.artifacts.root, artifactDir);
+
+  const from = current.status.phase;
+  if (patch.phase !== from && !canTransition(from, patch.phase)) {
+    throw new WorkflowTransitionError(from, patch.phase);
+  }
 
   const next: OswaldState = {
     ...current,

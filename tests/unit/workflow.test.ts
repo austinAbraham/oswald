@@ -57,8 +57,31 @@ describe("workflow: canTransition", () => {
 
   it("allows resuming from blocked into a non-terminal state", () => {
     expect(canTransition("blocked", "eda")).toBe(true);
-    expect(canTransition("blocked", "shipped")).toBe(false);
     expect(canTransition("blocked", "blocked")).toBe(false);
+  });
+
+  it("allows intake to bootstrap a fresh project through the intake phase", () => {
+    expect(canTransition("uninitialized", "clarification")).toBe(true);
+  });
+
+  it("allows skipping the optional clarification and eda phases", () => {
+    expect(canTransition("clarification", "eda")).toBe(true);
+    expect(canTransition("eda", "planning")).toBe(true);
+  });
+
+  it("allows delivery/ship to finalize straight from ready_for_pr", () => {
+    expect(canTransition("ready_for_pr", "shipped")).toBe(true);
+  });
+
+  it("allows ship to finalize a blocked workflow (documented exceptions)", () => {
+    expect(canTransition("blocked", "shipped")).toBe(true);
+  });
+
+  it("rejects other non-linear jumps despite the deliberate exceptions", () => {
+    expect(canTransition("uninitialized", "context")).toBe(false);
+    expect(canTransition("clarification", "design")).toBe(false);
+    expect(canTransition("context", "design")).toBe(false);
+    expect(canTransition("validating", "shipped")).toBe(false);
   });
 });
 

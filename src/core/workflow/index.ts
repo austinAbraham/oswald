@@ -4,5 +4,6 @@ export {
   nextState,
   canTransition,
   recommendNextCommand,
+  WorkflowTransitionError,
   type WorkflowState,
 } from "./states.js";

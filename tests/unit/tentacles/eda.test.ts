@@ -2,12 +2,12 @@ import { describe, it, expect, afterEach } from "vitest";
 import { promises as fs } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { buildContext } from "../../../src/tentacles/base.js";
+import { buildContext, type TentacleContext } from "../../../src/tentacles/base.js";
 import { edaTentacle } from "../../../src/tentacles/eda/index.js";
 import { MockWarehouseProvider } from "../../../src/tools/index.js";
 import type { MockWarehouseFixture } from "../../../src/tools/providers/mock/warehouse.js";
 import { parseConfig } from "../../../src/core/config/index.js";
-import { readState } from "../../../src/core/state/index.js";
+import { readState, updateState } from "../../../src/core/state/index.js";
 import { fixedClock } from "../../../src/utils/time.js";
 
 const CLOCK = fixedClock("2026-06-22T00:00:00.000Z");
@@ -75,6 +75,15 @@ const FIXTURE: MockWarehouseFixture = {
   ],
 };
 
+/** Move a freshly-seeded state into the phase the tentacle under test owns. */
+async function seedEdaPhase(ctx: TentacleContext): Promise<void> {
+  ctx.state = await updateState(
+    ctx.artifacts.root,
+    (s) => ({ ...s, status: { ...s.status, phase: "eda" } }),
+    { clock: CLOCK },
+  );
+}
+
 async function ctxWith(opts: {
   provider?: MockWarehouseProvider | undefined;
   options?: Record<string, unknown>;
@@ -88,6 +97,7 @@ async function ctxWith(opts: {
     ...(opts.provider ? { providers: { warehouse: opts.provider } } : {}),
     options: opts.options ?? {},
   });
+  await seedEdaPhase(ctx);
   return { root, ctx };
 }
 
