@@ -26,8 +26,9 @@
  */
 import * as path from "node:path";
 import { buildContext } from "../../tentacles/base.js";
-import type { TentacleProviders } from "../../tentacles/base.js";
+import type { TentacleContext, TentacleProviders } from "../../tentacles/base.js";
 import { getTentacle } from "../../tentacles/registry.js";
+import type { AuditLedger } from "../../core/audit/index.js";
 import { readState, updateState } from "../../core/state/index.js";
 import { recommendNextCommand } from "../../core/workflow/index.js";
 import { logger as defaultLogger, type Logger } from "../../core/logging/index.js";
@@ -132,6 +133,8 @@ export interface RunTentacleCommandArgs {
   initStateIfMissing?: boolean;
   /** Logger override (tests). */
   logger?: Logger;
+  /** Audit ledger override (when the command already holds the instance). */
+  audit?: AuditLedger;
 }
 
 /** Result of running a tentacle command. */
@@ -170,6 +173,8 @@ export async function runTentacleCommand(
   };
 
   let outcome: RunOutcome;
+  let ctx: TentacleContext | undefined;
+  let phaseBefore: string | undefined;
   try {
     const config = await resolveConfig(args.cwd);
 
@@ -193,7 +198,7 @@ export async function runTentacleCommand(
       return { exitCode: 1, artifactsWritten: [], nextCommand: null };
     }
 
-    const ctx = await buildContext({
+    ctx = await buildContext({
       projectRoot: args.cwd,
       config,
       ...(args.ticketId ? { ticketId: args.ticketId } : {}),
@@ -201,7 +206,9 @@ export async function runTentacleCommand(
       ...(args.providers ? { providers: args.providers } : {}),
       ...(args.initStateIfMissing ? { initStateIfMissing: true } : {}),
       logger: log,
+      ...(args.audit ? { audit: args.audit } : {}),
     });
+    phaseBefore = ctx.state.status.phase;
 
     // Persist the targeted ticket id into state so downstream commands and
     // `next --run` can recover it. (Tentacles advance the phase but do not own
@@ -259,11 +266,33 @@ export async function runTentacleCommand(
       artifactsWritten: result.artifactsWritten,
       nextCommand,
     };
+
+    // Persist the step outcome to the audit ledger (paths project-relative).
+    ctx.audit.record("step_outcome", {
+      command: args.command,
+      tentacle: args.id,
+      ...(args.ticketId ? { ticket: args.ticketId } : {}),
+      ...(phaseBefore ? { phase_before: phaseBefore } : {}),
+      phase_after: state.status.phase,
+      exit_code: outcome.exitCode,
+      artifacts: result.artifactsWritten.map(
+        (p) => path.relative(args.cwd, p) || p,
+      ),
+    });
   } catch (err) {
-    log.error(
-      `${args.command} failed: ${err instanceof Error ? err.message : String(err)}`,
-    );
+    const message = err instanceof Error ? err.message : String(err);
+    log.error(`${args.command} failed: ${message}`);
     outcome = { exitCode: 1, artifactsWritten: [], nextCommand: null };
+
+    // Best-effort failure record; the ledger never sees absolute user paths.
+    ctx?.audit.record("step_outcome", {
+      command: args.command,
+      tentacle: args.id,
+      ...(args.ticketId ? { ticket: args.ticketId } : {}),
+      ...(phaseBefore ? { phase_before: phaseBefore } : {}),
+      exit_code: 1,
+      error: message.split(args.cwd).join("."),
+    });
   }
 
   return outcome;

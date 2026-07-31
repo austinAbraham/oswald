@@ -19,7 +19,12 @@
  * In non-interactive / test mode there is no prompt: absent consent from a flag
  * or the policy, the action is denied. This keeps tests deterministic and makes
  * the autonomous runtime safe by construction.
+ *
+ * When constructed with an {@link AuditSink}, every decision — allowed, denied,
+ * or prohibited — is appended to the persistent audit ledger (fail-open: audit
+ * writes never affect the decision or crash the caller).
  */
+import type { AuditSink } from "../audit/ledger.js";
 
 /** The fixed set of side-effecting action classes Oswald can gate. */
 export const APPROVAL_ACTIONS = [
@@ -157,37 +162,48 @@ export function isActionProhibited(
  *  - otherwise → `denied`: we DEFAULT-DENY any side-effecting action without
  *    consent, even if the policy did not list it. (Fail closed.)
  */
+export interface ApprovalServiceOptions {
+  /** Optional audit sink; every decision is recorded when present. */
+  audit?: AuditSink;
+  /** Ticket id decisions are attributed to in the audit trail, when known. */
+  ticketId?: string;
+}
+
 export class ApprovalService {
+  private readonly audit: AuditSink | undefined;
+  private readonly ticketId: string | undefined;
+
+  constructor(options: ApprovalServiceOptions = {}) {
+    this.audit = options.audit;
+    this.ticketId = options.ticketId;
+  }
+
   requireApproval(
     action: ApprovalAction,
     options: RequireApprovalOptions,
   ): ApprovalResult {
     const { yes, draft, policy } = options;
+    const isGated = matchesAny(action, policy.requireApprovalFor);
 
+    let result: ApprovalResult;
     if (matchesAny(action, policy.prohibit)) {
-      return {
+      result = {
         action,
         decision: "prohibited",
         allowed: false,
         reason: `Action '${action}' is prohibited by policy (policies.prohibit).`,
         consentSource: "none",
       };
-    }
-
-    const isGated = matchesAny(action, policy.requireApprovalFor);
-
-    if (draft === true) {
-      return {
+    } else if (draft === true) {
+      result = {
         action,
         decision: "denied",
         allowed: false,
         reason: `Action '${action}' is draft-only for this run (--draft); consent withheld regardless of policy.`,
         consentSource: "none",
       };
-    }
-
-    if (yes === true) {
-      return {
+    } else if (yes === true) {
+      result = {
         action,
         decision: "allowed",
         allowed: true,
@@ -196,15 +212,13 @@ export class ApprovalService {
           : `Action '${action}' permitted with explicit consent (not separately gated).`,
         consentSource: "flag",
       };
-    }
-
-    if (
+    } else if (
       yes === undefined &&
       policy.autonomyLevel === "auto_safe" &&
       matchesAny(action, policy.autoApprove ?? [])
     ) {
       if (action === "push") {
-        return {
+        result = {
           action,
           decision: "denied",
           allowed: false,
@@ -213,25 +227,52 @@ export class ApprovalService {
             "pushes require explicit consent regardless of autonomy.auto_approve.",
           consentSource: "none",
         };
+      } else {
+        result = {
+          action,
+          decision: "allowed",
+          allowed: true,
+          reason: `Action '${action}' auto-approved by policy: autonomy.auto_approve (level 'auto_safe').`,
+          consentSource: "policy",
+        };
       }
-      return {
+    } else {
+      result = {
         action,
-        decision: "allowed",
-        allowed: true,
-        reason: `Action '${action}' auto-approved by policy: autonomy.auto_approve (level 'auto_safe').`,
-        consentSource: "policy",
+        decision: "denied",
+        allowed: false,
+        reason: isGated
+          ? `Action '${action}' requires approval; no explicit consent supplied (default-deny).`
+          : `Action '${action}' is a side-effecting write; explicit consent required (default-deny).`,
+        consentSource: "none",
       };
     }
 
-    return {
+    this.audit?.record("approval_decision", {
       action,
-      decision: "denied",
-      allowed: false,
-      reason: isGated
-        ? `Action '${action}' requires approval; no explicit consent supplied (default-deny).`
-        : `Action '${action}' is a side-effecting write; explicit consent required (default-deny).`,
-      consentSource: "none",
-    };
+      decision: result.decision,
+      allowed: result.allowed,
+      // The consent the caller OFFERED (an explicit flag is recorded even when
+      // the decision is prohibited/denied — "pushed with --yes but refused" is
+      // exactly what an audit reviewer needs to see).
+      consent:
+        yes === true
+          ? "explicit_flag"
+          : result.consentSource === "policy"
+            ? "policy"
+            : "none",
+      policy_gate:
+        result.decision === "prohibited"
+          ? "prohibited"
+          : isGated
+            ? "gated"
+            : "ungated",
+      reason: result.reason,
+      ...(options.reason ? { context: options.reason } : {}),
+      ...(this.ticketId ? { ticket: this.ticketId } : {}),
+    });
+
+    return result;
   }
 
   /** Convenience: throwing variant for call sites that want fail-fast. */

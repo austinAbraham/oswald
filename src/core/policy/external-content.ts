@@ -12,6 +12,7 @@
  * the *imperative force* of injection attempts (so a model is far less likely to
  * act on them) and surfaces them.
  */
+import type { AuditSink } from "../audit/ledger.js";
 
 export type InjectionSeverity = "high" | "medium";
 
@@ -188,14 +189,34 @@ export function wrapUntrusted(text: string, source: string): WrappedContent {
 }
 
 /**
- * Convenience: a stateless sanitizer object, useful for dependency injection.
+ * Convenience: a sanitizer object, useful for dependency injection. When
+ * constructed with an {@link AuditSink}, every wrap that detects injection
+ * patterns appends a `sanitizer_detection` record (pattern ids + severity only
+ * — never the matched untrusted text, which must not persist unredacted).
  */
 export class ExternalContentSanitizer {
+  private readonly audit: AuditSink | undefined;
+
+  constructor(options: { audit?: AuditSink } = {}) {
+    this.audit = options.audit;
+  }
+
   detect(text: string): InjectionReport {
     return detectInjections(text);
   }
 
   wrap(text: string, source: string): WrappedContent {
-    return wrapUntrusted(text, source);
+    const result = wrapUntrusted(text, source);
+    if (result.report.detected) {
+      this.audit?.record("sanitizer_detection", {
+        source: result.source,
+        highest_severity: result.report.highestSeverity,
+        findings: result.report.findings.map((f) => ({
+          id: f.id,
+          severity: f.severity,
+        })),
+      });
+    }
+    return result;
   }
 }

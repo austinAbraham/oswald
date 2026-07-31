@@ -4,6 +4,7 @@ import type { Command } from "commander";
 import { runTentacleCommand } from "./_run.js";
 import { selectProviders, type SnowflakeSettings } from "./_providers.js";
 import { resolveConfig } from "./_config.js";
+import { AuditLedger } from "../../core/audit/index.js";
 import { logger } from "../../core/logging/index.js";
 
 const OptionsSchema = z.object({
@@ -70,7 +71,18 @@ export function registerEda(program: Command): void {
         return;
       }
 
-      const { providers, resolution } = selectProviders({ cwd, warehouse, snowflake });
+      // One ledger instance owns the hash chain for this run: provider
+      // fallbacks recorded here and the tentacle's events share it.
+      const audit = new AuditLedger(cwd, {
+        artifactDir: config.paths.artifact_dir,
+        logger,
+      });
+      const { providers, resolution } = selectProviders({
+        cwd,
+        warehouse,
+        snowflake,
+        audit,
+      });
 
       const options: Record<string, unknown> = { execute };
       if (opts.tables) {
@@ -87,6 +99,7 @@ export function registerEda(program: Command): void {
         ticketId: ticket,
         options,
         providers,
+        audit,
         providerResolution: resolution,
         ...(opts.strictProviders ? { strictProviders: true } : {}),
       });

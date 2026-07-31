@@ -266,6 +266,7 @@ stays green offline. `oswald doctor` reports whether `snow` was detected.
 | `update-ticket <ticket>` | Write results back to the ticket; `--draft` (default) or `--post --yes`. |
 | `ship <ticket>` | Finalize: verify validation + PR summary, archive intermediates, mark `shipped`. |
 | `compact` | Summarize artifacts into `current_context.md`; archive noisy intermediates. |
+| `audit` | Inspect the tamper-evident audit ledger (`.oswald/audit.jsonl`); `export --format json\|csv`, `verify` walks the hash chain. |
 | `brief` | Assemble an exec-readable stakeholder brief (`brief.md`) from existing artifacts; `--stdout-only` to print without writing. |
 | `status` | Read-only run dashboard: phase, ticket, requirements, blockers, artifacts, tool health, next command (`--json`). |
 | `next` | Show (or `--run`) the recommended next command from state. |

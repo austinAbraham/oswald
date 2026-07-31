@@ -14,6 +14,7 @@ import { registerPr } from "./pr.js";
 import { registerUpdateTicket } from "./update-ticket.js";
 import { registerShip } from "./ship.js";
 import { registerCompact } from "./compact.js";
+import { registerAudit } from "./audit.js";
 import { registerBrief } from "./brief.js";
 import { registerStatus } from "./status.js";
 
@@ -44,6 +45,7 @@ export function registerCommands(program: Command): void {
 
   // Maintenance + navigation.
   registerCompact(program);
+  registerAudit(program);
   registerBrief(program);
   registerStatus(program);
   registerNext(program);
