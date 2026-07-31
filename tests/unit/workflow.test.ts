@@ -4,7 +4,9 @@ import {
   isWorkflowState,
   nextState,
   canTransition,
+  assertLegalTransition,
   recommendNextCommand,
+  WorkflowTransitionError,
 } from "../../src/core/workflow/index.js";
 
 describe("workflow: state guards", () => {
@@ -82,6 +84,26 @@ describe("workflow: canTransition", () => {
     expect(canTransition("clarification", "design")).toBe(false);
     expect(canTransition("context", "design")).toBe(false);
     expect(canTransition("validating", "shipped")).toBe(false);
+  });
+});
+
+describe("workflow: assertLegalTransition", () => {
+  it("passes a canTransition-allowed move", () => {
+    expect(() => assertLegalTransition("building", "validating")).not.toThrow();
+    expect(() => assertLegalTransition("blocked", "planning")).not.toThrow();
+  });
+
+  it("passes an idempotent same-phase re-run", () => {
+    expect(() => assertLegalTransition("eda", "eda")).not.toThrow();
+  });
+
+  it("throws a WorkflowTransitionError carrying the endpoints on an illegal move", () => {
+    expect(() => assertLegalTransition("planning", "context")).toThrow(
+      WorkflowTransitionError,
+    );
+    expect(() => assertLegalTransition("planning", "context")).toThrow(
+      /Illegal workflow transition 'planning' → 'context'/,
+    );
   });
 });
 

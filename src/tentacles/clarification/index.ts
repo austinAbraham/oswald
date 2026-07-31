@@ -305,6 +305,8 @@ export const clarificationTentacle: Tentacle<
   description:
     "Identify ambiguity, scope risks, and open questions before engineering — triage blocking vs non-blocking, group by stakeholder, propose assumptions, recommend splitting oversized tickets, and draft an external clarification comment (posting/creating is gated by approval).",
 
+  advancesTo: "context",
+
   inputSchema: ClarificationInputSchema,
   outputSchema: ClarificationOutputSchema,
 

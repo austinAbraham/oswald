@@ -123,10 +123,14 @@ open questions, artifacts written, and the suggested next command. All return
 Transitions are **enforced**: a command run out of order (one whose completed
 phase the state machine cannot reach from the current phase, e.g. `plan`
 straight after `intake`) fails loudly with an `Illegal workflow transition`
-error (exit `1`) and leaves state untouched. Re-running the current phase's
-command is always allowed; the deliberate exceptions (skipping the optional
-`clarify`/`eda` steps, finalizing from `ready_for_pr`, shipping over documented
-limitations) live in one table in `src/core/workflow/states.ts`.
+error (exit `1`) and leaves state untouched. The check is **pre-flighted
+before the command does any work** — an out-of-order command posts nothing to
+a ticket provider, writes no artifacts or project files, and archives nothing
+(and `advanceWorkflow` re-asserts the same rule afterwards as the backstop).
+Re-running the current phase's command is always allowed; the deliberate
+exceptions (skipping the optional `clarify`/`eda` steps, finalizing from
+`ready_for_pr`, shipping over documented limitations) live in one table in
+`src/core/workflow/states.ts`.
 
 ### `oswald intake [ticketOrInput]`
 Ingest a ticket and draft structured requirements. The positional is either a

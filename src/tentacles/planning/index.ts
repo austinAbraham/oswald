@@ -248,6 +248,8 @@ export const planningTentacle: Tentacle<
   description:
     "Plan analytical dbt + SQL models from the design/EDA/intake artifacts: identify the modeling pattern, propose layered staging/intermediate/mart models, outline SQL/YAML/docs/tests/exposures, keep changes small, and emit a changed_files manifest of intended changes — without touching project models.",
 
+  advancesTo: "building",
+
   inputSchema: PlanningInputSchema,
   outputSchema: PlanningOutputSchema,
 

@@ -212,6 +212,8 @@ export const validationTentacle: Tentacle<
   description:
     "Verify generated work satisfies requirements: classify acceptance criteria into deterministic checks, optionally run configured validation + dbt build/test (guarded), reconcile against a legacy report, and produce a fix plan — never declaring done while blocking failures remain.",
 
+  advancesTo: "ready_for_pr",
+
   inputSchema: ValidationInputSchema,
   outputSchema: ValidationOutputSchema,
 

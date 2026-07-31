@@ -16,7 +16,7 @@ import * as path from "node:path";
 import { runTentacleCommand, resolveConsent } from "../../src/cli/commands/_run.js";
 import { buildProgram } from "../../src/cli/index.js";
 import { selectProviders } from "../../src/cli/commands/_providers.js";
-import { createInitialState, writeState, readState } from "../../src/core/state/index.js";
+import { createInitialState, writeState, readState, updateState } from "../../src/core/state/index.js";
 import { createLogger, type Logger } from "../../src/core/logging/index.js";
 import { systemClock } from "../../src/utils/time.js";
 
@@ -151,6 +151,12 @@ describe("CLI: runTentacleCommand", () => {
       initStateIfMissing: true,
       logger,
     });
+    // Validation may only run from a phase the state machine allows it in.
+    await updateState(
+      root,
+      (s) => ({ ...s, status: { ...s.status, phase: "validating" } }),
+      { clock: systemClock },
+    );
 
     const outcome = await runTentacleCommand({
       id: "validate",
@@ -165,6 +171,41 @@ describe("CLI: runTentacleCommand", () => {
     expect(outcome.exitCode).toBe(2);
     const state = await readState(root);
     expect(state.status.phase).toBe("blocked");
+  });
+
+  it("refuses an out-of-order command before it runs (exit 1, nothing written)", async () => {
+    const root = await makeTmpDir();
+    const fixture = path.join(root, "ticket.md");
+    await fs.writeFile(fixture, TICKET, "utf8");
+    const { logger, lines } = captureLogger();
+
+    await runTentacleCommand({
+      id: "intake",
+      command: "intake",
+      cwd: root,
+      ticketId: "CLI-2",
+      options: { fromFile: fixture },
+      initStateIfMissing: true,
+      logger,
+    });
+
+    const outcome = await runTentacleCommand({
+      id: "validate",
+      command: "validate",
+      cwd: root,
+      ticketId: "CLI-2",
+      options: { skipExternal: true },
+      logger,
+    });
+
+    expect(outcome.exitCode).toBe(1);
+    expect(outcome.artifactsWritten).toEqual([]);
+    expect(lines.some((l) => l.includes("Illegal workflow transition"))).toBe(true);
+    const state = await readState(root);
+    expect(state.status.phase).toBe("clarification");
+    await expect(
+      fs.access(path.join(root, ".oswald", "validation_report.md")),
+    ).rejects.toBeTruthy();
   });
 
   it("returns exit code 1 for an unknown tentacle id", async () => {
@@ -276,7 +317,18 @@ describe("CLI: build / ship / compact via the program", () => {
   it("ship refuses (exit code via thrown override) when no pr_summary exists", async () => {
     const root = await makeTmpDir();
     await runToPlan(root);
+    await updateState(
+      root,
+      (s) => ({ ...s, status: { ...s.status, phase: "validating" } }),
+      { clock: systemClock },
+    );
     await runTentacleCommand({ id: "validate", command: "validate", cwd: root, ticketId: "CLI-3", options: { skipExternal: true } });
+    // Document the deferred-check blockers so ship reaches the pr_summary gate.
+    await fs.writeFile(
+      path.join(root, ".oswald", "known_limitations.md"),
+      "# Known Limitations\n\n- validation checks deferred offline\n",
+      "utf8",
+    );
 
     const program = buildProgram();
     program.exitOverride();
@@ -286,6 +338,28 @@ describe("CLI: build / ship / compact via the program", () => {
     process.exitCode = 0;
     await expect(
       fs.access(path.join(root, ".oswald", "ship_record.md")),
+    ).rejects.toBeTruthy();
+  });
+
+  it("ship refuses an out-of-order run before archiving anything", async () => {
+    const root = await makeTmpDir();
+    await runToPlan(root);
+
+    const program = buildProgram();
+    program.exitOverride();
+    await program.parseAsync(["node", "oswald", "ship", "CLI-3", "--cwd", root]);
+
+    expect(process.exitCode).toBe(1);
+    process.exitCode = 0;
+    await expect(
+      fs.access(path.join(root, ".oswald", "ship_record.md")),
+    ).rejects.toBeTruthy();
+    // The archivable intermediates are untouched (nothing moved to archive/).
+    await expect(
+      fs.access(path.join(root, ".oswald", "source_inventory.md")),
+    ).resolves.toBeUndefined();
+    await expect(
+      fs.access(path.join(root, ".oswald", "archive")),
     ).rejects.toBeTruthy();
   });
 

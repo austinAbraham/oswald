@@ -3,6 +3,7 @@ export {
   isWorkflowState,
   nextState,
   canTransition,
+  assertLegalTransition,
   recommendNextCommand,
   WorkflowTransitionError,
   type WorkflowState,

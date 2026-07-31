@@ -17,6 +17,7 @@ import * as path from "node:path";
 import { z } from "zod";
 import type { Command } from "commander";
 import { buildContext, advanceWorkflow } from "../../tentacles/base.js";
+import { assertLegalTransition } from "../../core/workflow/index.js";
 import { logger } from "../../core/logging/index.js";
 import { resolveConfig } from "./_config.js";
 
@@ -67,6 +68,11 @@ export function registerShip(program: Command): void {
           ticketId: ticket,
           options: {},
         });
+
+        // Pre-flight the state machine BEFORE any side effect: an out-of-order
+        // ship must refuse here, while nothing has been archived and no ship
+        // record written (advanceWorkflow re-asserts this as the backstop).
+        assertLegalTransition(ctx.state.status.phase, "shipped");
 
         const hasLimitations = await ctx.artifacts.exists(KNOWN_LIMITATIONS);
 

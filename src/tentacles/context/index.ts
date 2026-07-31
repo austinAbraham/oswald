@@ -133,6 +133,8 @@ export const contextTentacle: Tentacle<
   description:
     "Find existing context so the pipeline does not rebuild what exists: scan the local repo for dbt models/SQL/YAML/docs, extract source references, metric definitions and owners, rank similar prior work, and optionally pull related tickets/docs — all local-first and degrading gracefully without providers.",
 
+  advancesTo: "eda",
+
   inputSchema: ContextInputSchema,
   outputSchema: ContextOutputSchema,
 

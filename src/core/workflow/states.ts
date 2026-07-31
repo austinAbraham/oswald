@@ -134,6 +134,25 @@ export class WorkflowTransitionError extends Error {
 }
 
 /**
+ * Assert that moving the workflow from `from` into `to` is legal: either an
+ * idempotent same-phase re-run or a move {@link canTransition} allows. Throws
+ * a {@link WorkflowTransitionError} otherwise.
+ *
+ * Commands call this BEFORE doing any work (pre-flight) so an out-of-order
+ * invocation refuses loudly without committing side effects — external posts,
+ * project-tree writes, artifact archival all stay untouched. `advanceWorkflow`
+ * applies the same assertion again as the backstop.
+ */
+export function assertLegalTransition(
+  from: WorkflowState,
+  to: WorkflowState,
+): void {
+  if (to !== from && !canTransition(from, to)) {
+    throw new WorkflowTransitionError(from, to);
+  }
+}
+
+/**
  * Recommend the CLI command a user should run next from a given state.
  * Returns a human-friendly sentinel for terminal states.
  */

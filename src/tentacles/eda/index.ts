@@ -192,6 +192,8 @@ export const edaTentacle: Tentacle<typeof EdaInputSchema, typeof EdaOutputSchema
   description:
     "Generate and (optionally) run read-only SQL to discover candidate warehouse sources, profile data quality, infer grain, probe join paths, and identify PII — preferring aggregates over raw rows and never leaking sensitive values.",
 
+  advancesTo: "design",
+
   inputSchema: EdaInputSchema,
   outputSchema: EdaOutputSchema,
 

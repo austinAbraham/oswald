@@ -156,6 +156,8 @@ export const deliveryTentacle: Tentacle<
   description:
     "Package completed work for human review and keep external systems updated — summarize changed files, write a PR description with validation evidence, draft a ticket update, append the decision log, and write handoff + release notes. Branch/PR/ticket writes are draft-by-default and gated through the ApprovalService.",
 
+  advancesTo: "shipped",
+
   inputSchema: DeliveryInputSchema,
   outputSchema: DeliveryOutputSchema,
 
