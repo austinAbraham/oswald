@@ -53,13 +53,34 @@ Initialize Oswald in a project — config check, state, and runtime templates.
 
 ### `oswald doctor`
 Diagnose the environment — runtime, config validity, artifact dir, state,
-per-provider health, and policy mode.
+artifact drift, per-provider health, and policy mode.
 
 | Option | Description |
 |--------|-------------|
+| `--accept-drift` | bless hand-edited artifacts: re-hash their current content into the drift baseline (keeps the edits) |
 | `-C, --cwd <dir>` | project root |
 
-**Writes:** nothing. **Exit:** `0` if no check has `fail` status, else `1`.
+The **drift** check compares each artifact's recorded content-hash baseline
+(`state.yml` `artifact_hashes`, recorded at write time) against the explicit
+upstream→downstream consumption edges, and warns when an upstream artifact
+changed after a downstream phase last ran (`state.yml` `phase_runs`, stamped on
+every run — so re-running a phase clears its staleness even when its outputs
+are byte-identical). `stale` findings name the downstream phase to re-run
+(e.g. `intake` re-run but `design`/`plan` never regenerated); `modified`
+findings (content edited outside the pipeline) name the PRODUCING phase —
+re-run it to regenerate the artifact, or keep the edit with `--accept-drift`.
+Report-only otherwise: drift is a `warn`, never a `fail` — the hard gate lives
+in `oswald ship`. Artifacts written before drift tracking existed are reported
+as `unknown (no baseline)`.
+
+`--accept-drift` re-hashes every baselined artifact whose on-disk content
+diverged, using the file's mtime as the new baseline time: consumers that
+already re-ran after the edit stay fresh, consumers that predate it are
+honestly flagged stale until re-run. It never invents baselines for
+pre-tracking (`unknown`) artifacts.
+
+**Writes:** nothing (with `--accept-drift`: updated baselines in
+`.oswald/state.yml`). **Exit:** `0` if no check has `fail` status, else `1`.
 
 ### `oswald next`
 Show (or run) the recommended next command, derived from the workflow state
@@ -222,15 +243,26 @@ Write results back to the ticket. Posting is gated.
 ## Finalization & maintenance
 
 ### `oswald ship <ticket>`
-Finalize: verify a validation result and PR summary exist, archive intermediate
-artifacts, and mark the ticket shipped.
+Finalize: verify a validation result and PR summary exist, check for artifact
+drift, archive intermediate artifacts, and mark the ticket shipped.
 
 | Option | Description |
 |--------|-------------|
+| `--allow-drift` | ship despite detected artifact drift (the override is recorded in the ship record) |
 | `-C, --cwd <dir>` | project root |
 
+Ship refuses when any upstream artifact drifted — unless `--allow-drift`
+explicitly overrides (never a default; the override is written into the ship
+record). `stale` findings clear by re-running the named downstream phase (a
+byte-identical re-run counts); `modified` findings (hand-edits) clear by
+re-running the producing phase or blessing the edit with
+`oswald doctor --accept-drift`. Artifacts with no recorded baseline
+(`unknown (no baseline)`, e.g. runs that predate drift tracking) never block
+shipping.
+
 **Writes:** `ship.md`; archives intermediates; advances state to `shipped`.
-**Exit:** `0` on success; `1` if preconditions are unmet (missing validation/PR).
+**Exit:** `0` on success; `1` if preconditions are unmet (missing validation/PR,
+unresolved drift).
 
 ### `oswald compact`
 Summarize artifacts into a `current_context.md` and archive noisy intermediates —

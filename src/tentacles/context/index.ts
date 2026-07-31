@@ -54,6 +54,13 @@ export const ARTIFACT_NAMES = {
   sources: "source_inventory.md",
 } as const;
 
+/**
+ * Upstream artifacts this tentacle reads (to derive the ranking query).
+ * Mirrored by the drift checker's consumption-edge table (kept aligned by a
+ * unit test).
+ */
+export const INPUT_ARTIFACTS = ["intake.md", "requirements.md"] as const;
+
 /** Cap how many discovered files we read content from (perf + safety). */
 const MAX_CONTENT_READS = 200;
 
@@ -107,7 +114,7 @@ function bulletList(items: string[], emptyNote: string): string {
 async function deriveQuery(ctx: TentacleContext): Promise<string> {
   const parts: string[] = [];
   if (ctx.ticketId) parts.push(ctx.ticketId);
-  for (const name of ["intake.md", "requirements.md"]) {
+  for (const name of INPUT_ARTIFACTS) {
     try {
       if (await ctx.artifacts.exists(name)) {
         parts.push(await ctx.artifacts.read(name));

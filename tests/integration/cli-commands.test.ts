@@ -17,8 +17,10 @@ import { runTentacleCommand, resolveConsent } from "../../src/cli/commands/_run.
 import { buildProgram } from "../../src/cli/index.js";
 import { selectProviders } from "../../src/cli/commands/_providers.js";
 import { createInitialState, writeState, readState } from "../../src/core/state/index.js";
+import { parseConfig } from "../../src/core/config/index.js";
 import { createLogger, type Logger } from "../../src/core/logging/index.js";
-import { systemClock } from "../../src/utils/time.js";
+import { buildContext, advanceWorkflow } from "../../src/tentacles/base.js";
+import { systemClock, fixedClock } from "../../src/utils/time.js";
 
 const tmpDirs: string[] = [];
 
@@ -181,6 +183,74 @@ describe("CLI: runTentacleCommand", () => {
   });
 });
 
+/** Deterministic hour-spaced timestamps for simulated pipeline runs. */
+function stamp(hour: number): string {
+  return `2026-06-22T0${hour}:00:00.000Z`;
+}
+
+/**
+ * Simulate one recorded pipeline run at a fixed instant: write artifacts
+ * through the ArtifactManager (which records hash baselines) and advance the
+ * workflow (which persists them into `state.artifact_hashes`).
+ */
+async function recordedPhaseRun(
+  root: string,
+  iso: string,
+  files: Record<string, string>,
+  command: string,
+): Promise<void> {
+  const ctx = await buildContext({
+    projectRoot: root,
+    config: parseConfig({ project: { name: "cli-test" } }),
+    clock: fixedClock(iso),
+    initStateIfMissing: true,
+  });
+  for (const [name, content] of Object.entries(files)) {
+    await ctx.artifacts.write(name, content);
+  }
+  await advanceWorkflow(ctx, {
+    phase: "ready_for_ticket_update",
+    lastCommand: command,
+    blockers: [],
+  });
+}
+
+/**
+ * Seed a fully shippable project with recorded hash baselines: every phase's
+ * artifacts written in order, a clean validation report, and a PR summary.
+ */
+async function seedShippablePipeline(root: string): Promise<void> {
+  await recordedPhaseRun(root, stamp(0), {
+    "intake.md": "brief",
+    "requirements.md": "reqs",
+    "acceptance_criteria.md": "criteria",
+  }, "intake");
+  await recordedPhaseRun(root, stamp(1), {
+    "metric_spec.yml": "metrics: []",
+    "semantic_model_plan.md": "plan",
+    "dimension_contracts.yml": "dims: []",
+  }, "design");
+  await recordedPhaseRun(root, stamp(2), {
+    "model_plan.md": "models",
+    "implementation_plan.md": "impl",
+    "changed_files.md": "files",
+  }, "plan");
+  await recordedPhaseRun(root, stamp(3), {
+    "build_preview.md": "preview",
+    "changed_files.json": "version: 1",
+  }, "build");
+  await recordedPhaseRun(root, stamp(4), {
+    "validation_report.md": "# Validation Report\n\nAll checks passed.\n",
+    "test_results.md": "green",
+  }, "validate");
+  await recordedPhaseRun(root, stamp(5), {
+    "pr_summary.md": "# PR Summary\n",
+    "jira_update.md": "update",
+    "release_notes.md": "notes",
+    "handoff_notes.md": "handoff",
+  }, "pr");
+}
+
 describe("CLI: build / ship / compact via the program", () => {
   /** Run a pipeline far enough that build + delivery have inputs. */
   async function runToPlan(root: string): Promise<void> {
@@ -287,6 +357,67 @@ describe("CLI: build / ship / compact via the program", () => {
     await expect(
       fs.access(path.join(root, ".oswald", "ship_record.md")),
     ).rejects.toBeTruthy();
+  });
+
+  it("ship refuses with exit 1 when an upstream artifact drifted; --allow-drift overrides", async () => {
+    const root = await makeTmpDir();
+    await seedShippablePipeline(root);
+    // Intake re-runs with NEW content AFTER design/plan/... already ran.
+    await recordedPhaseRun(root, stamp(6), { "intake.md": "brief v2 with answers" }, "intake");
+
+    // Without the override → refuse, exit 1, no ship record.
+    const p1 = buildProgram();
+    p1.exitOverride();
+    await p1.parseAsync(["node", "oswald", "ship", "CLI-4", "--cwd", root]);
+    expect(process.exitCode).toBe(1);
+    process.exitCode = 0;
+    await expect(
+      fs.access(path.join(root, ".oswald", "ship_record.md")),
+    ).rejects.toBeTruthy();
+
+    // With the EXPLICIT override → ships, and the record documents it.
+    const p2 = buildProgram();
+    p2.exitOverride();
+    await p2.parseAsync(["node", "oswald", "ship", "CLI-4", "--allow-drift", "--cwd", root]);
+    expect(process.exitCode).toBe(0);
+    const record = await fs.readFile(
+      path.join(root, ".oswald", "ship_record.md"),
+      "utf8",
+    );
+    expect(record).toContain("--allow-drift");
+    const state = await readState(root);
+    expect(state.status.phase).toBe("shipped");
+  });
+
+  it("ship passes the drift gate for an in-order pipeline", async () => {
+    const root = await makeTmpDir();
+    await seedShippablePipeline(root);
+
+    const program = buildProgram();
+    program.exitOverride();
+    await program.parseAsync(["node", "oswald", "ship", "CLI-4", "--cwd", root]);
+    expect(process.exitCode).toBe(0);
+    const record = await fs.readFile(
+      path.join(root, ".oswald", "ship_record.md"),
+      "utf8",
+    );
+    expect(record).toContain("**Drift check:** no drift");
+  });
+
+  it("ship never hard-fails on drift for pre-existing runs without baselines", async () => {
+    const root = await makeTmpDir();
+    // Old-style run: artifacts on disk, state carries no artifact_hashes.
+    await seedState(root, "CLI-4");
+    const dir = path.join(root, ".oswald");
+    await fs.writeFile(path.join(dir, "validation_report.md"), "# Validation Report\n\nAll checks passed.\n", "utf8");
+    await fs.writeFile(path.join(dir, "pr_summary.md"), "# PR Summary\n", "utf8");
+
+    const program = buildProgram();
+    program.exitOverride();
+    await program.parseAsync(["node", "oswald", "ship", "CLI-4", "--cwd", root]);
+    expect(process.exitCode).toBe(0);
+    const record = await fs.readFile(path.join(dir, "ship_record.md"), "utf8");
+    expect(record).toContain("unknown (no baseline)");
   });
 
   it("compact summarizes artifacts into current_context.md", async () => {
