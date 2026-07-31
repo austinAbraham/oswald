@@ -18,6 +18,7 @@ export const ARTIFACT_FILES = {
   pr: "pr.md",
   ticketUpdate: "ticket-update.md",
   ship: "ship.md",
+  brief: "brief.md",
   audit: "audit.log",
 } as const;
 
