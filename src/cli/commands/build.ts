@@ -54,6 +54,17 @@ const CHANGED_FILES_PLAN = "changed_files.md";
 const BUILD_PREVIEW = "build_preview.md";
 const BUILD_MANIFEST = "changed_files.json";
 
+/**
+ * Planning artifacts `build` reads / artifacts it writes. Mirrored by the
+ * drift checker's consumption-edge table (kept aligned by a unit test).
+ */
+export const INPUT_ARTIFACTS = [
+  IMPLEMENTATION_PLAN,
+  MODEL_PLAN,
+  CHANGED_FILES_PLAN,
+] as const;
+export const OUTPUT_ARTIFACTS = [BUILD_PREVIEW, BUILD_MANIFEST] as const;
+
 export function registerBuild(program: Command): void {
   program
     .command("build")

@@ -47,7 +47,11 @@ fallback keyed on the directory name).
 Zod schema (`state/schema.ts`): `version`, `project`, `ticket`, `status`
 (phase / last command / next recommended command / blockers), `requirements`
 (completeness, unresolved questions), `tools`, `policy`, an `artifacts` key→path
-map, and `timestamps`. `state/store.ts` provides `readState` / `writeState` /
+map, an `artifact_hashes` map (sha256 + written-at baselines recorded at write
+time, powering the drift checker in `core/drift`), a `phase_runs` map (command →
+when the phase last completed, tracked independently of artifact content so a
+byte-identical re-run still clears staleness), and `timestamps`.
+`state/store.ts` provides `readState` / `writeState` /
 `createInitialState` / `updateState`. State is what makes the pipeline survive a
 context reset or a restart — the next agent reads the file, not the transcript.
 
@@ -56,8 +60,14 @@ context reset or a restart — the next agent reads the file, not the transcript
 `ArtifactManager` owns all reads/writes under `<root>/<artifactDir>` (default
 `.oswald`). It guards against path traversal, renders structured docs to
 Markdown (`renderMarkdown`) and objects to YAML (`renderYaml`), and supports
-`archive(name)` (moves a file to `archive/<timestamp>-<name>`). The artifact
-directory — not the LLM context — is the project's memory.
+`archive(name)` (moves a file to `archive/<timestamp>-<name>`). As the single
+write point it also records a sha256 baseline for every artifact it writes;
+`advanceWorkflow` persists those into `state.artifact_hashes` (and stamps
+`state.phase_runs`) so the drift checker (`core/drift`) can flag phases whose
+upstream artifacts changed after they last ran (report-only in `doctor`, a hard
+gate in `ship`; deliberate hand-edits can be blessed via
+`doctor --accept-drift`). The artifact directory — not the LLM context — is the
+project's memory.
 
 ### Workflow state machine (`core/workflow`)
 

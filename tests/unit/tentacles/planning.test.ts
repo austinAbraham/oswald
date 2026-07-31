@@ -60,7 +60,7 @@ async function seededContext(opts: {
     initStateIfMissing: true,
     ticketId: "DEMO-1",
   });
-  if (opts.design) await ctx.artifacts.write("design.md", opts.design);
+  if (opts.design) await ctx.artifacts.write("semantic_model_plan.md", opts.design);
   if (opts.acceptance) await ctx.artifacts.write("acceptance_criteria.md", opts.acceptance);
   if (opts.intake) await ctx.artifacts.write("intake.md", opts.intake);
   return ctx;

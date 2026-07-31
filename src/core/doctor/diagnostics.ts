@@ -13,7 +13,9 @@ import {
   ConfigError,
   type OswaldConfig,
 } from "../config/index.js";
-import { readState, StateError } from "../state/index.js";
+import { readState, StateError, DEFAULT_ARTIFACT_DIR } from "../state/index.js";
+import { ArtifactManager } from "../artifacts/index.js";
+import { checkDrift, type DriftReport } from "../drift/index.js";
 import {
   recommendNextCommand,
   isWorkflowState,
@@ -49,6 +51,8 @@ export interface DoctorReport {
     maxResultRows: number;
   } | null;
   recommendedNext: string | null;
+  /** Artifact drift report (null when state is not initialized). Report-only. */
+  drift: DriftReport | null;
   /** Overall: ok if no fail-status checks. */
   ok: boolean;
 }
@@ -152,6 +156,63 @@ async function checkState(
   }
 }
 
+/**
+ * Artifact drift check (report-only): flags phases whose upstream artifacts
+ * changed after they last ran. `warn` on drift — doctor never hard-fails on
+ * it; the hard gate lives in `oswald ship`.
+ */
+async function checkArtifactDrift(
+  root: string,
+  config: OswaldConfig | null,
+): Promise<{ check: DiagnosticCheck; drift: DriftReport | null }> {
+  const artifactDir = config?.paths.artifact_dir ?? DEFAULT_ARTIFACT_DIR;
+  let drift: DriftReport;
+  try {
+    const state = await readState(root, artifactDir);
+    const artifacts = new ArtifactManager(root, { artifactDir });
+    drift = await checkDrift({ state, artifacts });
+  } catch {
+    return {
+      check: {
+        name: "drift",
+        status: "ok",
+        detail: "skipped (state not initialized)",
+      },
+      drift: null,
+    };
+  }
+
+  if (drift.drifted.length > 0) {
+    const phases = [...new Set(drift.drifted.map((f) => f.phase))].join(", ");
+    return {
+      check: {
+        name: "drift",
+        status: "warn",
+        detail: `${drift.drifted.length} stale/modified upstream(s) — re-run: ${phases}`,
+      },
+      drift,
+    };
+  }
+  if (drift.unknown.length > 0) {
+    return {
+      check: {
+        name: "drift",
+        status: "ok",
+        detail: `no drift; ${drift.unknown.length} artifact(s) unknown (no baseline)`,
+      },
+      drift,
+    };
+  }
+  return {
+    check: {
+      name: "drift",
+      status: "ok",
+      detail: `no drift across ${drift.findings.length} checked edge(s)`,
+    },
+    drift,
+  };
+}
+
 /** Build the full doctor report. */
 export async function runDiagnostics(options: DoctorOptions): Promise<DoctorReport> {
   const root = path.resolve(options.cwd);
@@ -166,6 +227,9 @@ export async function runDiagnostics(options: DoctorOptions): Promise<DoctorRepo
 
   const { check: stateCheck, next } = await checkState(root);
   checks.push(stateCheck);
+
+  const { check: driftCheck, drift } = await checkArtifactDrift(root, config);
+  checks.push(driftCheck);
 
   const providers: ProviderDiagnostic[] = [];
   for (const p of options.providers ?? []) {
@@ -201,5 +265,5 @@ export async function runDiagnostics(options: DoctorOptions): Promise<DoctorRepo
 
   const ok = !checks.some((c) => c.status === "fail");
 
-  return { checks, providers, policyMode, recommendedNext: next, ok };
+  return { checks, providers, policyMode, recommendedNext: next, drift, ok };
 }
