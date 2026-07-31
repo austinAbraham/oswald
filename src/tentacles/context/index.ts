@@ -55,7 +55,8 @@ export const ARTIFACT_NAMES = {
 } as const;
 
 /**
- * Upstream artifacts this tentacle reads (to derive the ranking query).
+ * Upstream artifacts this tentacle reads best-effort to derive the ranking
+ * query (the real subject of this tentacle is the project tree itself).
  * Mirrored by the drift checker's consumption-edge table (kept aligned by a
  * unit test).
  */

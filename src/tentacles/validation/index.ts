@@ -63,7 +63,8 @@ export const ARTIFACT_NAMES = {
   limitations: "known_limitations.md",
 } as const;
 
-const ACCEPTANCE_ARTIFACT = "acceptance_criteria.md";
+/** The single upstream artifact this tentacle reads (intake's acceptance list). */
+export const ACCEPTANCE_ARTIFACT = "acceptance_criteria.md";
 
 /**
  * Upstream artifacts this tentacle reads (its own prior outputs excluded).

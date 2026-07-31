@@ -59,7 +59,8 @@ export const ARTIFACT_NAMES = {
   comment: "clarification_comment.md",
 } as const;
 
-const INTAKE_ARTIFACTS = {
+/** Intake artifacts this tentacle reads (each optional → degrade gracefully). */
+export const INTAKE_ARTIFACTS = {
   brief: "intake.md",
   requirements: "requirements.md",
   acceptance: "acceptance_criteria.md",
