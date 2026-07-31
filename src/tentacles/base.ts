@@ -353,6 +353,22 @@ export async function advanceWorkflow(
   const artifactDir = ctx.config.paths.artifact_dir || DEFAULT_ARTIFACT_DIR;
   const current = await readState(ctx.artifacts.root, artifactDir);
 
+  // Persist content-hash baselines for every artifact written this run (the
+  // drift checker's input). A rewrite with IDENTICAL content keeps its
+  // original written_at, so an upstream no-op re-run never registers as a
+  // change for its downstream consumers.
+  const artifactHashes = { ...current.artifact_hashes };
+  for (const [name, rec] of Object.entries(ctx.artifacts.recordedHashes())) {
+    const prev = artifactHashes[name];
+    artifactHashes[name] = prev && prev.sha256 === rec.sha256 ? prev : rec;
+  }
+
+  // Record when this phase last ran, keyed by its command verb and INDEPENDENT
+  // of artifact content: deterministic tentacles often rewrite byte-identical
+  // outputs, and a re-run must still clear a stale-drift finding.
+  const stamp = ctx.clock.nowIso();
+  const phaseRuns = { ...current.phase_runs, [patch.lastCommand]: stamp };
+
   const next: OswaldState = {
     ...current,
     status: {
@@ -370,8 +386,10 @@ export async function advanceWorkflow(
       ...current.artifacts,
       ...(patch.artifacts ?? {}),
     },
+    artifact_hashes: artifactHashes,
+    phase_runs: phaseRuns,
   };
-  next.timestamps.updated_at = ctx.clock.nowIso();
+  next.timestamps.updated_at = stamp;
 
   await writeState(next, artifactDir);
   ctx.state = next;

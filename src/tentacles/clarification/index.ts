@@ -59,11 +59,22 @@ export const ARTIFACT_NAMES = {
   comment: "clarification_comment.md",
 } as const;
 
-const INTAKE_ARTIFACTS = {
+/** Intake artifacts this tentacle reads (each optional → degrade gracefully). */
+export const INTAKE_ARTIFACTS = {
   brief: "intake.md",
   requirements: "requirements.md",
   acceptance: "acceptance_criteria.md",
 } as const;
+
+/**
+ * Upstream artifacts this tentacle reads. Mirrored by the drift checker's
+ * consumption-edge table (kept aligned by a unit test).
+ */
+export const INPUT_ARTIFACTS = [
+  INTAKE_ARTIFACTS.brief,
+  INTAKE_ARTIFACTS.requirements,
+  INTAKE_ARTIFACTS.acceptance,
+] as const;
 
 // --- I/O schemas -----------------------------------------------------------
 

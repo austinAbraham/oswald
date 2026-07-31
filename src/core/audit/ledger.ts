@@ -37,8 +37,8 @@
  */
 import * as path from "node:path";
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
-import { createHash } from "node:crypto";
 import { z } from "zod";
+import { sha256Hex } from "../artifacts/manager.js";
 import { pathExists, readText, writeText } from "../../utils/fs.js";
 import { systemClock, type Clock } from "../../utils/time.js";
 import { logger as defaultLogger, type Logger } from "../logging/index.js";
@@ -121,10 +121,10 @@ export interface AuditVerifyReport {
   truncatedLines?: number[];
 }
 
-/** SHA-256 hex digest of a UTF-8 string. */
-export function sha256Hex(text: string): string {
-  return createHash("sha256").update(text, "utf8").digest("hex");
-}
+// Single canonical SHA-256 helper lives in artifacts/manager (also used for
+// artifact content hashing); re-exported here so audit callers keep their
+// import path and both core barrels resolve to the same binding.
+export { sha256Hex };
 
 /**
  * Canonical JSON: recursively key-sorted, `undefined` properties dropped. Hash

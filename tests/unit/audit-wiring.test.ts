@@ -307,7 +307,7 @@ describe("audit wiring: runTentacleCommand step outcomes", () => {
       cwd: root,
       ticketId: "AE-1",
       options: { execute: true },
-      providers: selectProviders({ cwd: root, warehouse: "mock" }),
+      providers: selectProviders({ cwd: root, warehouse: "mock" }).providers,
       logger,
     });
     expect(outcome.exitCode).toBe(0);
@@ -355,7 +355,7 @@ describe("audit wiring: runTentacleCommand step outcomes", () => {
 describe("audit wiring: provider fallback", () => {
   it("records a snowflake→mock warehouse fallback when no connection is configured", () => {
     const { sink, events } = memorySink();
-    const providers = selectProviders({
+    const { providers } = selectProviders({
       cwd: "/tmp",
       warehouse: "snowflake",
       audit: sink,
@@ -376,7 +376,7 @@ describe("audit wiring: provider fallback", () => {
     const { sink, events } = memorySink();
     // `node --version` exits 0, so detection succeeds and the REAL provider is
     // constructed; the blocked statement below is refused BEFORE any spawn.
-    const providers = selectProviders({
+    const { providers } = selectProviders({
       cwd: "/tmp",
       warehouse: "snowflake",
       snowflake: { connection: "analytics", command: "node" },

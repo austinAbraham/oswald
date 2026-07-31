@@ -16,6 +16,7 @@ const OptionsSchema = z.object({
   connection: z.string().optional(),
   warehouseCommand: z.string().optional(),
   queryTimeout: z.coerce.number().int().positive().optional(),
+  strictProviders: z.boolean().optional(),
   cwd: z.string(),
 });
 
@@ -32,6 +33,7 @@ export function registerEda(program: Command): void {
     .option("--connection <name>", "snow connection NAME (required for --execute with snowflake)")
     .option("--warehouse-command <cmd>", "warehouse CLI invocation (default: 'snow')")
     .option("--query-timeout <ms>", "per-query subprocess timeout in ms")
+    .option("--strict-providers", "fail (exit 1) instead of falling back to a mock provider")
     .option("-C, --cwd <dir>", "project root", process.cwd())
     .addHelpText(
       "after",
@@ -75,7 +77,12 @@ export function registerEda(program: Command): void {
         artifactDir: config.paths.artifact_dir,
         logger,
       });
-      const providers = selectProviders({ cwd, warehouse, snowflake, audit });
+      const { providers, resolution } = selectProviders({
+        cwd,
+        warehouse,
+        snowflake,
+        audit,
+      });
 
       const options: Record<string, unknown> = { execute };
       if (opts.tables) {
@@ -93,6 +100,8 @@ export function registerEda(program: Command): void {
         options,
         providers,
         audit,
+        providerResolution: resolution,
+        ...(opts.strictProviders ? { strictProviders: true } : {}),
       });
       process.exitCode = exitCode;
     });
