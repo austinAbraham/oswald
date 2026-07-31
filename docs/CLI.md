@@ -68,7 +68,18 @@ machine.
 | Option | Description |
 |--------|-------------|
 | `--run` | execute the recommended next command (never skips validation) |
+| `--explain` | additionally explain WHY that command is next: where the phase sits on the pipeline, which input artifacts the step reads (present vs missing), what it writes, which blockers / unresolved open questions gate it, which provider capabilities it needs vs what `state.tools` records, and which consent flags its approval-gated side effects would need |
 | `-C, --cwd <dir>` | project root |
+
+`--explain` is deterministic and read-only — it is composed entirely from
+`state.yml`, artifact existence, `oswald.yml` policies, and the tentacle
+registry, and never changes the default output (the explanation is appended
+after it). The `reads` lines report the LITERAL filenames the recommended
+step's code actually looks for (steps resolve inputs by filename, including
+legacy fallback chains such as `validation_report.md` → `validation.md`);
+input names that no pipeline step currently produces are called out as
+exactly that. When the phase is `blocked` it lists the blockers and says
+exactly what to re-run (the parking command when known, else `validate`).
 
 **Writes:** nothing itself; with `--run`, the dispatched command writes its own
 artifacts and sets its own exit code. **Exit:** `0` when showing; otherwise the

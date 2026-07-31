@@ -54,7 +54,7 @@ export const ARTIFACT_NAMES = {
 } as const;
 
 /** Upstream artifacts this tentacle reads (all optional → degrade gracefully). */
-const INPUT_ARTIFACTS = [
+export const INPUT_ARTIFACTS = [
   "requirements.md",
   "acceptance_criteria.md",
   "intake.md",

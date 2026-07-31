@@ -59,7 +59,7 @@ export const ARTIFACT_NAMES = {
 } as const;
 
 // Prior-artifact filenames this tentacle reads (best-effort).
-const INPUT_ARTIFACTS = {
+export const INPUT_ARTIFACTS = {
   design: "design.md",
   eda: "eda.md",
   intake: "intake.md",

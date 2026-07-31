@@ -63,7 +63,8 @@ export const ARTIFACT_NAMES = {
   limitations: "known_limitations.md",
 } as const;
 
-const ACCEPTANCE_ARTIFACT = "acceptance_criteria.md";
+/** The single upstream artifact this tentacle reads (intake's acceptance list). */
+export const ACCEPTANCE_ARTIFACT = "acceptance_criteria.md";
 
 // --- I/O schemas (zod-free lightweight contract via base patterns) ---------
 // NOTE: the foundation uses zod elsewhere; we import it here to keep parity

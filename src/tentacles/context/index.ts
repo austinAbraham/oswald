@@ -54,6 +54,12 @@ export const ARTIFACT_NAMES = {
   sources: "source_inventory.md",
 } as const;
 
+/**
+ * Prior artifacts whose text seeds the similarity query (read best-effort).
+ * The real subject of this tentacle is the project tree itself.
+ */
+export const INPUT_ARTIFACTS = ["intake.md", "requirements.md"] as const;
+
 /** Cap how many discovered files we read content from (perf + safety). */
 const MAX_CONTENT_READS = 200;
 
@@ -107,7 +113,7 @@ function bulletList(items: string[], emptyNote: string): string {
 async function deriveQuery(ctx: TentacleContext): Promise<string> {
   const parts: string[] = [];
   if (ctx.ticketId) parts.push(ctx.ticketId);
-  for (const name of ["intake.md", "requirements.md"]) {
+  for (const name of INPUT_ARTIFACTS) {
     try {
       if (await ctx.artifacts.exists(name)) {
         parts.push(await ctx.artifacts.read(name));

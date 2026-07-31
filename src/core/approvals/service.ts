@@ -80,6 +80,30 @@ function matchesAny(action: ApprovalAction, list: string[]): boolean {
 }
 
 /**
+ * Whether the policy explicitly gates an action (`require_approval_for`),
+ * matching either vocabulary via the alias table. Read-only introspection for
+ * explain/teach output — the enforcement path is `requireApproval` below.
+ */
+export function isActionGated(
+  action: ApprovalAction,
+  policy: ApprovalPolicy,
+): boolean {
+  return matchesAny(action, policy.requireApprovalFor);
+}
+
+/**
+ * Whether the policy prohibits an action outright (`prohibit`), matching either
+ * vocabulary via the alias table. Read-only introspection for explain/teach
+ * output — the enforcement path is `requireApproval` below.
+ */
+export function isActionProhibited(
+  action: ApprovalAction,
+  policy: ApprovalPolicy,
+): boolean {
+  return matchesAny(action, policy.prohibit);
+}
+
+/**
  * Decide whether a side-effecting action may proceed.
  *
  * Decision table:
