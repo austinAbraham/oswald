@@ -8,6 +8,7 @@ const OptionsSchema = z.object({
   draft: z.boolean().optional(),
   open: z.boolean().optional(),
   yes: z.boolean().optional(),
+  json: z.boolean().optional(),
   cwd: z.string(),
 });
 
@@ -19,6 +20,7 @@ export function registerPr(program: Command): void {
     .option("--draft", "produce the PR summary as a draft only (default)")
     .option("--open", "open the pull request (requires approval + a repo provider)")
     .option("-y, --yes", "grant explicit approval for gated side effects")
+    .option("--json", "emit one machine-readable JSON step report on stdout (CI mode)")
     .option("-C, --cwd <dir>", "project root", process.cwd())
     .addHelpText(
       "after",
@@ -43,6 +45,7 @@ export function registerPr(program: Command): void {
           ...(opts.open ? { open: true } : {}),
           ...(opts.draft ? { draft: true } : {}),
         },
+        json: Boolean(opts.json),
       });
       process.exitCode = exitCode;
     });

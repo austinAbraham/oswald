@@ -3,13 +3,17 @@ import { z } from "zod";
 import type { Command } from "commander";
 import { runTentacleCommand } from "./_run.js";
 
-const OptionsSchema = z.object({ cwd: z.string() });
+const OptionsSchema = z.object({
+  json: z.boolean().optional(),
+  cwd: z.string(),
+});
 
 export function registerDesign(program: Command): void {
   program
     .command("design")
     .description("Convert business language into precise metric/semantic definitions")
     .argument("<ticket>", "ticket id this design targets")
+    .option("--json", "emit one machine-readable JSON step report on stdout (CI mode)")
     .option("-C, --cwd <dir>", "project root", process.cwd())
     .addHelpText("after", "\nExamples:\n  oswald design TICKET-42")
     .action(async (ticket: string, raw: unknown) => {
@@ -21,6 +25,7 @@ export function registerDesign(program: Command): void {
         command: "design",
         cwd,
         ticketId: ticket,
+        json: Boolean(opts.json),
       });
       process.exitCode = exitCode;
     });

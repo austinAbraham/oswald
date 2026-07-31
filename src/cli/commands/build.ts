@@ -20,17 +20,30 @@
  * The plan text is UNTRUSTED (it embeds wrapped ticket/EDA content), so it is
  * neutralized via the sanitizer before any pattern reading, and generated file
  * bodies are PII-redacted before writing.
+ *
+ * CI / headless mode: `build` is the one pipeline command that does not route
+ * through the shared runner (`_run.ts`), so it assembles the same
+ * machine-readable {@link StepReport} itself. With `--json` the human block is
+ * suppressed and exactly ONE JSON step report is emitted on stdout (valid on
+ * every outcome — success and hard error alike); diagnostics go to stderr.
  */
 import * as path from "node:path";
 import { promises as fs } from "node:fs";
 import { z } from "zod";
 import type { Command } from "commander";
 import { buildContext, advanceWorkflow } from "../../tentacles/base.js";
-import { policyFromConfig } from "../../core/approvals/index.js";
+import { policyFromConfig, type ApprovalService } from "../../core/approvals/index.js";
+import { recommendNextCommand } from "../../core/workflow/index.js";
 import { pathExists } from "../../utils/fs.js";
-import { logger } from "../../core/logging/index.js";
+import { logger, type Logger } from "../../core/logging/index.js";
 import { resolveConfig } from "./_config.js";
 import { detectDbtProject, runDbt } from "../../tools/dbt/index.js";
+import {
+  consentSource,
+  failureStepReport,
+  STEP_REPORT_SCHEMA,
+  type StepReport,
+} from "./_run.js";
 import {
   planModels,
   renderModelSql,
@@ -45,6 +58,7 @@ const OptionsSchema = z.object({
   yes: z.boolean().optional(),
   skipExternal: z.boolean().optional(),
   dbtCommand: z.string().optional(),
+  json: z.boolean().optional(),
   cwd: z.string(),
 });
 
@@ -64,6 +78,7 @@ export function registerBuild(program: Command): void {
     .option("-y, --yes", "grant explicit approval required by --apply")
     .option("--skip-external", "do not run dbt parse after generating (stay fully local)")
     .option("--dbt-command <cmd>", "dbt invocation for the post-apply parse (else config/`dbt`)")
+    .option("--json", "emit one machine-readable JSON step report on stdout (CI mode)")
     .option("-C, --cwd <dir>", "project root", process.cwd())
     .addHelpText(
       "after",
@@ -72,6 +87,32 @@ export function registerBuild(program: Command): void {
     .action(async (ticket: string, raw: unknown) => {
       const opts = OptionsSchema.parse(raw);
       const cwd = path.resolve(opts.cwd);
+      const json = Boolean(opts.json);
+      // Only `--yes` grants consent for build (`--apply` requests the action).
+      const source = consentSource({ yes: Boolean(opts.yes) });
+
+      // In JSON mode stdout must carry ONLY the report document: informational
+      // chatter is silenced, while warnings/errors keep flowing to stderr.
+      const log: Logger = json
+        ? {
+            info: () => {},
+            success: () => {},
+            warn: (m) => logger.warn(m),
+            error: (m) => logger.error(m),
+          }
+        : logger;
+
+      // Non-fatal warnings, collected verbatim for the step report.
+      const warnings: string[] = [];
+      const warn = (message: string): void => {
+        warnings.push(message);
+        log.warn(message);
+      };
+
+      // Tracked across try/catch so the error report can still carry the phase
+      // we started from and any approval decisions taken before the failure.
+      let phaseBefore: string | null = null;
+      let approvalService: ApprovalService | null = null;
 
       try {
         const ctx = await buildContext({
@@ -79,13 +120,28 @@ export function registerBuild(program: Command): void {
           config: await resolveConfig(cwd),
           ticketId: ticket,
           options: {},
+          logger: log,
         });
+        phaseBefore = ctx.state.status.phase;
+        approvalService = ctx.approvals;
 
         // --- Read the implementation plan (required input). -----------------
         if (!(await ctx.artifacts.exists(IMPLEMENTATION_PLAN))) {
-          logger.error(
-            `build: no ${IMPLEMENTATION_PLAN} found under ${ctx.artifacts.artifactDir}/. Run 'oswald plan ${ticket}' first.`,
-          );
+          const message = `build: no ${IMPLEMENTATION_PLAN} found under ${ctx.artifacts.artifactDir}/. Run 'oswald plan ${ticket}' first.`;
+          log.error(message);
+          if (json) {
+            // Keep the one-JSON-document contract even on precondition refusal.
+            const report: StepReport = {
+              ...failureStepReport({
+                command: "build",
+                ticket,
+                exitCode: 1,
+                error: message,
+              }),
+              phase_before: phaseBefore,
+            };
+            console.log(JSON.stringify(report));
+          }
           process.exitCode = 1;
           return;
         }
@@ -100,7 +156,7 @@ export function registerBuild(program: Command): void {
         // Trust boundary: neutralize the (untrusted) plan text before reading.
         const wrap = ctx.policy.sanitizer.wrap(rawPlan, IMPLEMENTATION_PLAN);
         if (wrap.report.detected) {
-          logger.warn(
+          warn(
             "build: prompt-injection patterns detected in the implementation plan; neutralized and treated as data only.",
           );
         }
@@ -123,7 +179,7 @@ export function registerBuild(program: Command): void {
             : IMPLEMENTATION_PLAN;
 
         if (models.length === 0) {
-          logger.warn(
+          warn(
             "build: no models could be derived from the plan — nothing to generate. Confirm the plan named concrete model(s).",
           );
         }
@@ -140,7 +196,7 @@ export function registerBuild(program: Command): void {
         const willApply = wantsApply && !opts.dryRun && decision.allowed;
 
         if (wantsApply && !willApply) {
-          logger.warn(
+          warn(
             `build: --apply not honored (${
               opts.dryRun ? "--dry-run also set" : decision.reason
             }); falling back to a dry-run preview.`,
@@ -234,7 +290,13 @@ export function registerBuild(program: Command): void {
               parseSummary = "ok — generated SQL compiles";
             } else {
               parseSummary = `FAILED — ${parseResult.reason ?? "dbt parse error"}`;
-              logger.warn(
+              // The step report gets a concise warning (raw dbt stderr may
+              // contain absolute paths, which never belong in machine output);
+              // the full detail still lands on stderr for humans.
+              warnings.push(
+                `build: dbt parse failed after generation (${parseResult.reason ?? "dbt parse error"}). The files were written for human review; fix the TODO(human) markers and re-parse.`,
+              );
+              log.warn(
                 `build: dbt parse failed after generation. The files were written for human review; fix the TODO(human) markers and re-parse.\n${parseResult.stderr.slice(0, 500)}`,
               );
             }
@@ -323,7 +385,7 @@ export function registerBuild(program: Command): void {
         );
 
         // --- Advance workflow → validating. --------------------------------
-        await advanceWorkflow(ctx, {
+        const state = await advanceWorkflow(ctx, {
           phase: "validating",
           lastCommand: "build",
           artifacts: {
@@ -332,28 +394,77 @@ export function registerBuild(program: Command): void {
           },
         });
 
-        // --- Standard output block. ----------------------------------------
-        logger.success(
-          `build (${mode}): ${
-            willApply
-              ? `${createdProjectFiles.length} file(s) created, ${skippedProjectFiles.length} skipped`
-              : `${planned.length} change(s) previewed`
-          }.`,
-        );
-        logger.info(`  artifacts (${writtenArtifacts.length}):`);
-        for (const p of writtenArtifacts) {
-          logger.info(`    - ${path.relative(cwd, p) || p}`);
+        const blocked = state.status.phase === "blocked";
+        const summaryLine = willApply
+          ? `${createdProjectFiles.length} file(s) created, ${skippedProjectFiles.length} skipped`
+          : `${planned.length} change(s) previewed`;
+
+        const report: StepReport = {
+          schema: STEP_REPORT_SCHEMA,
+          ok: !blocked,
+          command: "build",
+          ticket,
+          exit_code: blocked ? 2 : 0,
+          phase_before: phaseBefore,
+          phase_after: state.status.phase,
+          blocked,
+          blockers: [...state.status.blockers],
+          summary: `${mode}: ${summaryLine}`,
+          warnings,
+          open_questions_count: 0,
+          artifacts: writtenArtifacts.map((p) => path.relative(cwd, p) || p),
+          approvals: ctx.approvals.decisions().map((d) => ({
+            action: d.action,
+            decision: d.decision,
+            allowed: d.allowed,
+            reason: d.reason,
+            consent_source: source,
+          })),
+          next_command: recommendNextCommand(state.status.phase),
+          error: null,
+        };
+
+        if (json) {
+          // Machine output: exactly one JSON document on stdout, nothing else.
+          console.log(JSON.stringify(report));
+        } else {
+          // --- Standard output block. ----------------------------------------
+          logger.success(`build (${mode}): ${summaryLine}.`);
+          logger.info(`  artifacts (${writtenArtifacts.length}):`);
+          for (const p of writtenArtifacts) {
+            logger.info(`    - ${path.relative(cwd, p) || p}`);
+          }
+          if (willApply && createdProjectFiles.length > 0) {
+            logger.info(`  project files (${createdProjectFiles.length}):`);
+            for (const f of createdProjectFiles) logger.info(`    - ${f}`);
+          }
+          logger.info("  next:  oswald validate " + ticket);
         }
-        if (willApply && createdProjectFiles.length > 0) {
-          logger.info(`  project files (${createdProjectFiles.length}):`);
-          for (const f of createdProjectFiles) logger.info(`    - ${f}`);
-        }
-        logger.info("  next:  oswald validate " + ticket);
-        process.exitCode = 0;
+        process.exitCode = blocked ? 2 : 0;
       } catch (err) {
-        logger.error(
-          `build failed: ${err instanceof Error ? err.message : String(err)}`,
-        );
+        const message = err instanceof Error ? err.message : String(err);
+        // Diagnostics always go to stderr, so `--json` stdout stays parseable.
+        log.error(`build failed: ${message}`);
+        if (json) {
+          const report: StepReport = {
+            ...failureStepReport({
+              command: "build",
+              ticket,
+              exitCode: 1,
+              error: message,
+            }),
+            phase_before: phaseBefore,
+            warnings,
+            approvals: (approvalService?.decisions() ?? []).map((d) => ({
+              action: d.action,
+              decision: d.decision,
+              allowed: d.allowed,
+              reason: d.reason,
+              consent_source: source,
+            })),
+          };
+          console.log(JSON.stringify(report));
+        }
         process.exitCode = 1;
       }
     });

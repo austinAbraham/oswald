@@ -91,7 +91,28 @@ function matchesAny(action: ApprovalAction, list: string[]): boolean {
  *    the policy did not list it. (Fail closed.)
  */
 export class ApprovalService {
+  /** Every decision taken through this instance, in call order (audit trail). */
+  private readonly decisionLog: ApprovalResult[] = [];
+
+  /**
+   * Immutable snapshot of every approval decision taken so far. The CLI runner
+   * reads this after a tentacle run to report which gated actions were
+   * allowed/denied (e.g. in `--json` step reports).
+   */
+  decisions(): readonly ApprovalResult[] {
+    return [...this.decisionLog];
+  }
+
   requireApproval(
+    action: ApprovalAction,
+    options: RequireApprovalOptions,
+  ): ApprovalResult {
+    const result = this.decide(action, options);
+    this.decisionLog.push(result);
+    return result;
+  }
+
+  private decide(
     action: ApprovalAction,
     options: RequireApprovalOptions,
   ): ApprovalResult {

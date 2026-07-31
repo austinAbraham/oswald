@@ -16,6 +16,11 @@ The binary is `oswald` (see `package.json` `bin`). When it is not on `PATH`, use
 - **Consent flags are never defaults.** Writes are default-deny; a `--yes` /
   `--post` / `--open` / `--apply` is required, and `--draft` always forces
   draft-only. See [SECURITY_MODEL.md](./SECURITY_MODEL.md#approval-gates).
+- **`--json`** — every pipeline command (`intake` … `update-ticket`, including
+  `build`) supports a machine-output mode for CI/headless use: one JSON step
+  report on stdout, diagnostics on stderr. Operator and finalization commands
+  (`init`, `doctor`, `next`, `ship`, `compact`) are human-output only. See
+  [CI / machine output](#ci--machine-output---json).
 
 ## Exit codes
 
@@ -83,7 +88,9 @@ These advance the linear state machine
 validating → ready_for_pr → ready_for_ticket_update → shipped` (`blocked` is a
 recoverable side state). Each prints a standard block: what it did, warnings,
 open questions, artifacts written, and the suggested next command. All return
-`0` / `1` / `2` per the table above.
+`0` / `1` / `2` per the table above. Every pipeline command also accepts
+`--json` (see [CI / machine output](#ci--machine-output---json)); it changes
+only how the outcome is printed, never what the command does.
 
 ### `oswald intake [ticketOrInput]`
 Ingest a ticket and draft structured requirements. The positional is either a
@@ -94,6 +101,7 @@ ticket id (when a provider is given) or inline ticket text.
 | `--from-file <path>` | read raw ticket markdown from a local file |
 | `--provider <name>` | ticket source: `jira` / `github` / `local` / `mock` |
 | `--output <dir>` | artifact output dir override (advisory) |
+| `--json` | emit one machine-readable JSON step report on stdout |
 | `-C, --cwd <dir>` | project root |
 
 Examples: `oswald intake --from-file ./ticket.md`,
@@ -108,6 +116,7 @@ Triage open questions and draft a clarification comment. Posting is gated.
 | `--draft-comment` | render the clarification comment as a draft only |
 | `--post-comment` | post the clarification comment (requires approval) |
 | `-y, --yes` | grant explicit approval for gated side effects |
+| `--json` | emit one machine-readable JSON step report on stdout |
 | `-C, --cwd <dir>` | project root |
 
 **Writes:** `clarifications.md`. Posting (`ticket_update`) is approval-gated.
@@ -121,6 +130,7 @@ Gather existing warehouse/repo/doc context so work is not duplicated.
 | `--include-docs` | include related documents (needs a doc provider) |
 | `--include-prs` | include related PRs (needs a repo provider) |
 | `--include-tickets` | include related tickets (needs a ticket provider) |
+| `--json` | emit one machine-readable JSON step report on stdout |
 | `-C, --cwd <dir>` | project root |
 
 **Writes:** `context.md`.
@@ -139,6 +149,7 @@ passes the read-only safety validator; rows are LIMIT-capped.
 | `--connection <name>` | `snow` connection NAME (required for `--execute` with `snowflake`) |
 | `--warehouse-command <cmd>` | warehouse CLI invocation (default `snow`) |
 | `--query-timeout <ms>` | per-query subprocess timeout in ms |
+| `--json` | emit one machine-readable JSON step report on stdout |
 | `-C, --cwd <dir>` | project root |
 
 **Writes:** `eda.md`. `--warehouse snowflake --execute` runs live read-only EDA via
@@ -152,6 +163,7 @@ Convert business language into precise metric/semantic definitions.
 
 | Option | Description |
 |--------|-------------|
+| `--json` | emit one machine-readable JSON step report on stdout |
 | `-C, --cwd <dir>` | project root |
 
 **Writes:** `design.md`.
@@ -161,6 +173,7 @@ Plan layered dbt models + tests and emit an intended-changes manifest.
 
 | Option | Description |
 |--------|-------------|
+| `--json` | emit one machine-readable JSON step report on stdout |
 | `-C, --cwd <dir>` | project root |
 
 **Writes:** `plan.md`.
@@ -174,11 +187,15 @@ conservative example dbt scaffolding.
 | `--dry-run` | write a change preview + manifest only; touch no project files (default) |
 | `--apply` | generate conservative example dbt SQL/YAML under the model dir (approval-gated) |
 | `-y, --yes` | grant explicit approval required by `--apply` |
+| `--json` | emit one machine-readable JSON step report on stdout |
 | `-C, --cwd <dir>` | project root |
 
 **Writes:** `build.md` (always); with `--apply` + approval, dbt SQL/YAML under the
 configured `model_dir`/`test_dir`. **Exit:** `0` / `1` (e.g. `1` if `--apply`
-lacks approval or a precondition fails).
+lacks approval or a precondition fails). `build` is the one pipeline command
+that does not route through the shared runner, but `--json` emits the exact
+same step-report document (its `exit_code` is `0`/`1` per this command's
+contract).
 
 ### `oswald validate <ticket>`
 Verify generated work against acceptance criteria. Stays fully local by default;
@@ -188,6 +205,7 @@ running dbt is opt-in and guarded.
 |--------|-------------|
 | `--dbt` | run dbt parse/build/test (requires a wired command runner) |
 | `--skip-external` | stay fully local: never run any external command (default) |
+| `--json` | emit one machine-readable JSON step report on stdout |
 | `-C, --cwd <dir>` | project root |
 
 **Writes:** `validation.md`. A failed gate moves state to `blocked` → **exit 2**.
@@ -200,6 +218,7 @@ Package the change into a PR summary. Opening the PR is gated.
 | `--draft` | produce the PR summary as a draft only (default) |
 | `--open` | open the pull request (requires approval + a repo provider) |
 | `-y, --yes` | grant explicit approval for gated side effects |
+| `--json` | emit one machine-readable JSON step report on stdout |
 | `-C, --cwd <dir>` | project root |
 
 **Writes:** `pr.md`. Opening (`open_pull_request`) is approval-gated; direct push
@@ -213,6 +232,7 @@ Write results back to the ticket. Posting is gated.
 | `--draft` | produce the ticket update as a draft only (default) |
 | `--post` | post the update to the ticket (requires approval + provider) |
 | `-y, --yes` | grant explicit approval for gated side effects |
+| `--json` | emit one machine-readable JSON step report on stdout |
 | `-C, --cwd <dir>` | project root |
 
 **Writes:** `ticket-update.md`. Posting (`ticket_update`) is approval-gated.
@@ -242,6 +262,89 @@ the context-rot-resistance maintenance step.
 
 **Writes:** a compacted context summary; archives intermediates. **Exit:** `0` /
 `1`.
+
+---
+
+## CI / machine output (`--json`)
+
+Every pipeline command — the ten workflow-order commands from `intake` through
+`update-ticket`, including `build` — accepts `--json` for CI/headless use.
+Operator and finalization commands (`init`, `doctor`, `next`, `ship`,
+`compact`) do not take `--json` and stay human-output only. The flag never
+changes what a command *does* (consent stays default-deny; `--draft` still
+forces draft-only) — only how the outcome is printed:
+
+- **stdout** carries exactly **one JSON document per step** (the step report
+  below) and nothing else. The human-formatted block is suppressed.
+- **stderr** carries incidental diagnostics (logger warnings/errors), so stdout
+  stays parseable even when things go wrong.
+- The document is valid on **every** outcome: success, blocked, and hard error
+  alike (errors serialize into the same shape with `ok: false`).
+- The exit code follows the same `0` / `1` / `2` contract as the table above.
+
+### Step report schema (`oswald.step_report/v1`)
+
+Keys are snake_case and stable; new optional fields may be added, but existing
+fields only change with a bump of the `schema` id.
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `schema` | string | always `oswald.step_report/v1` |
+| `ok` | boolean | `true` only on a clean success (`exit_code` 0) |
+| `command` | string | the CLI verb that ran (e.g. `eda`, `pr`) |
+| `ticket` | string \| null | ticket id the step targeted |
+| `exit_code` | 0 \| 1 \| 2 | the documented exit-code contract |
+| `phase_before` | string \| null | workflow phase before the run |
+| `phase_after` | string \| null | workflow phase after the run (`null` on hard error) |
+| `blocked` | boolean | the workflow landed in `blocked` |
+| `blockers` | string[] | workflow blockers currently recorded in state |
+| `summary` | string \| null | the tentacle's one-line summary |
+| `warnings` | string[] | non-fatal warnings from the run |
+| `open_questions_count` | number | open questions a human must answer |
+| `artifacts` | string[] | artifacts written this run, **relative** to the project root |
+| `approvals` | object[] | every approval decision taken (see below) |
+| `next_command` | string \| null | recommended next CLI command |
+| `error` | string \| null | error message on hard failure |
+
+Each entry in `approvals` records one decision by the ApprovalService:
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `action` | string | gated action class (`open_pull_request`, `ticket_update`, …) |
+| `decision` | string | `allowed` / `denied` / `prohibited` |
+| `allowed` | boolean | whether the side effect was permitted |
+| `reason` | string | why (default-deny, policy gate, prohibit list, consent) |
+| `consent_source` | string | the flag that decided consent: `--yes` / `--post` / `--open` / `--apply`, `--draft` (forces deny), or `none` |
+
+Example (formatted; the CLI emits it on a single line):
+
+```json
+{
+  "schema": "oswald.step_report/v1",
+  "ok": false,
+  "command": "validate",
+  "ticket": "AE-1234",
+  "exit_code": 2,
+  "phase_before": "validating",
+  "phase_after": "blocked",
+  "blocked": true,
+  "blockers": ["2 acceptance check(s) deferred — must be executed"],
+  "summary": "validate: 0 pass, 0 fail, 2 deferred",
+  "warnings": [],
+  "open_questions_count": 0,
+  "artifacts": [".oswald/validation_report.md", ".oswald/test_results.md"],
+  "approvals": [],
+  "next_command": null,
+  "error": null
+}
+```
+
+Consumption tips: parse stdout with `jq`, gate on the exit code (a `2` means
+*blocked — a human must resolve blockers*), and archive the artifact dir. A
+ready-made GitHub Actions recipe lives at
+[`examples/github-actions/oswald-pipeline.yml`](../examples/github-actions/oswald-pipeline.yml)
+— it runs the pipeline draft-only on a sample ticket, uploads `.oswald/` as a
+build artifact, and fails the job when a step exits `2`.
 
 ---
 

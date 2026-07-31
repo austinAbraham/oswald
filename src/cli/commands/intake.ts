@@ -8,6 +8,7 @@ const OptionsSchema = z.object({
   fromFile: z.string().optional(),
   provider: z.enum(["jira", "github", "local", "mock"]).optional(),
   output: z.string().optional(),
+  json: z.boolean().optional(),
   cwd: z.string(),
 });
 
@@ -22,6 +23,7 @@ export function registerIntake(program: Command): void {
     .option("--from-file <path>", "read raw ticket markdown from a local file")
     .option("--provider <name>", "ticket source: jira|github|local|mock")
     .option("--output <dir>", "artifact output dir override (advisory)")
+    .option("--json", "emit one machine-readable JSON step report on stdout (CI mode)")
     .option("-C, --cwd <dir>", "project root", process.cwd())
     .addHelpText(
       "after",
@@ -64,6 +66,7 @@ export function registerIntake(program: Command): void {
         options,
         providers,
         initStateIfMissing: true,
+        json: Boolean(opts.json),
       });
       process.exitCode = exitCode;
     });
