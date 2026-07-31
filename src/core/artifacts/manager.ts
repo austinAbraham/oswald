@@ -1,4 +1,5 @@
 import * as path from "node:path";
+import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { stringify as stringifyYaml } from "yaml";
 import {
@@ -9,7 +10,7 @@ import {
   appendText,
 } from "../../utils/fs.js";
 import { DEFAULT_ARTIFACT_DIR } from "../state/store.js";
-import type { Clock } from "../../utils/time.js";
+import { systemClock, type Clock } from "../../utils/time.js";
 
 /** A structured document that can be rendered to Markdown. */
 export interface StructuredDoc {
@@ -27,6 +28,17 @@ export class ArtifactError extends Error {
   }
 }
 
+/** Content-hash baseline for a written artifact (drift-checker input). */
+export interface ArtifactHashRecord {
+  sha256: string;
+  written_at: string;
+}
+
+/** Cheap, deterministic sha256 hex digest of artifact content. */
+export function sha256Hex(content: string): string {
+  return createHash("sha256").update(content, "utf8").digest("hex");
+}
+
 /**
  * Manages reading/writing pipeline artifacts under a project's artifact dir.
  *
@@ -37,6 +49,8 @@ export class ArtifactManager {
   readonly root: string;
   readonly artifactDir: string;
   private readonly clock: Clock | undefined;
+  /** Hashes of artifacts written through this manager, keyed by artifact name. */
+  private readonly written = new Map<string, ArtifactHashRecord>();
 
   constructor(
     root: string,
@@ -83,18 +97,45 @@ export class ArtifactManager {
     return readText(p);
   }
 
-  /** Write (overwrite) an artifact. */
+  /** Write (overwrite) an artifact. Records a content-hash baseline. */
   async write(name: string, content: string): Promise<string> {
     const p = this.resolve(name);
     await writeText(p, content);
+    this.record(p, content);
     return p;
   }
 
-  /** Append text to an artifact (creating it if missing). */
+  /**
+   * Append text to an artifact (creating it if missing). The recorded baseline
+   * is the hash of the full resulting content, so drift comparisons stay exact.
+   */
   async append(name: string, text: string): Promise<string> {
     const p = this.resolve(name);
     await appendText(p, text);
+    this.record(p, await readText(p));
     return p;
+  }
+
+  /** Normalize an absolute artifact path to its canonical relative name. */
+  private canonicalName(absolutePath: string): string {
+    return path.relative(this.dir, absolutePath).split(path.sep).join("/");
+  }
+
+  /** Record the content-hash baseline for a just-written artifact. */
+  private record(absolutePath: string, content: string): void {
+    this.written.set(this.canonicalName(absolutePath), {
+      sha256: sha256Hex(content),
+      written_at: (this.clock ?? systemClock).nowIso(),
+    });
+  }
+
+  /**
+   * Content-hash baselines of every artifact written through this manager,
+   * keyed by artifact name. `advanceWorkflow` persists these into
+   * `state.artifact_hashes` so the drift checker has write-time baselines.
+   */
+  recordedHashes(): Record<string, ArtifactHashRecord> {
+    return Object.fromEntries(this.written);
   }
 
   /**
@@ -118,6 +159,9 @@ export class ArtifactManager {
     const dest = this.resolve(path.join("archive", `${stamp}-${base}`));
     await ensureDir(path.dirname(dest));
     await fs.rename(src, dest);
+    // The artifact no longer lives at its canonical name; drop its session
+    // baseline so it is not re-recorded as if it were still present.
+    this.written.delete(this.canonicalName(src));
     return dest;
   }
 

@@ -1,17 +1,25 @@
 import * as path from "node:path";
 import type { Command } from "commander";
 import { logger } from "../../core/logging/index.js";
-import { readState, StateError } from "../../core/state/index.js";
+import {
+  readState,
+  StateError,
+  type OswaldState,
+} from "../../core/state/index.js";
 import {
   recommendNextCommand,
   nextState,
 } from "../../core/workflow/index.js";
+import { ArtifactManager } from "../../core/artifacts/index.js";
+import { explainNextStep } from "./_explain.js";
+import { resolveConfig } from "./_config.js";
 
 /**
  * Commands that take a `<ticket>` positional argument. `next --run` looks the
- * ticket up in state and supplies it when dispatching one of these.
+ * ticket up in state and supplies it when dispatching one of these; `run`
+ * supplies its explicit `<ticket>` argument.
  */
-const TICKET_COMMANDS = new Set([
+export const TICKET_COMMANDS = new Set([
   "clarify",
   "context",
   "eda",
@@ -31,22 +39,19 @@ export function registerNext(program: Command): void {
     .description("Show (or, with --run, execute) the recommended next command")
     .option("-C, --cwd <dir>", "project root", process.cwd())
     .option("--run", "execute the recommended next command (never skips validation)")
+    .option(
+      "--explain",
+      "explain WHY the command is next (phase, inputs, gates, tools, consent); read-only",
+    )
     .addHelpText(
       "after",
-      "\nExamples:\n  oswald next\n  oswald next --run",
+      "\nExamples:\n  oswald next\n  oswald next --explain\n  oswald next --run",
     )
-    .action(async (opts: { cwd: string; run?: boolean }) => {
+    .action(async (opts: { cwd: string; run?: boolean; explain?: boolean }) => {
       const root = path.resolve(opts.cwd);
-      let phase;
-      let ticketId: string | null = null;
-      let blockers: string[] = [];
-      let externalBlock = false;
+      let state: OswaldState;
       try {
-        const state = await readState(root);
-        phase = state.status.phase;
-        ticketId = state.ticket.id;
-        blockers = state.status.blockers;
-        externalBlock = state.status.blocked_mode === "external";
+        state = await readState(root);
       } catch (err) {
         if (err instanceof StateError) {
           logger.warn("Oswald is not initialized here.");
@@ -56,6 +61,22 @@ export function registerNext(program: Command): void {
         }
         throw err;
       }
+      const phase = state.status.phase;
+      const ticketId = state.ticket.id;
+      const blockers = state.status.blockers;
+      const externalBlock = state.status.blocked_mode === "external";
+
+      // --explain: deterministic, read-only teaching output appended after the
+      // default lines. It never changes the default (no-flag) output.
+      const printExplanation = async (): Promise<void> => {
+        const config = await resolveConfig(root);
+        const artifacts = new ArtifactManager(root, {
+          artifactDir: config.paths.artifact_dir,
+        });
+        for (const line of await explainNextStep({ state, config, artifacts })) {
+          logger.info(line);
+        }
+      };
 
       const cmd = recommendNextCommand(phase);
       const successor = nextState(phase);
@@ -67,6 +88,9 @@ export function registerNext(program: Command): void {
 
       if (!cmd) {
         logger.success(`phase '${phase}' is terminal — nothing to run`);
+        if (opts.explain) {
+          await printExplanation();
+        }
         process.exitCode = 0;
         return;
       }
@@ -83,6 +107,10 @@ export function registerNext(program: Command): void {
       }
       if (successor) {
         logger.info(`  → advances toward phase '${successor}'`);
+      }
+
+      if (opts.explain) {
+        await printExplanation();
       }
 
       if (!opts.run) {

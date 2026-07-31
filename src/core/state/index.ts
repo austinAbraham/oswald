@@ -10,6 +10,7 @@ export {
   type StateStatus,
   type StateRequirements,
   type StatePolicy,
+  type StateArtifactHash,
   type StateTimestamps,
 } from "./schema.js";
 export {

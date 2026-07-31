@@ -5,4 +5,7 @@ export * from "./workflow/index.js";
 export * from "./logging/index.js";
 export * from "./policy/index.js";
 export * from "./approvals/index.js";
+export * from "./audit/index.js";
 export * from "./doctor/index.js";
+export * from "./drift/index.js";
+export * from "./status/index.js";

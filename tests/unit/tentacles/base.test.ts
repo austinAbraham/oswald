@@ -151,4 +151,84 @@ describe("advanceWorkflow", () => {
     expect(onDisk.status.phase).toBe("intake");
     expect(ctx.state.status.phase).toBe("intake");
   });
+
+  it("rejects an illegal transition loudly and leaves state untouched", async () => {
+    const root = await makeTmpDir();
+    const ctx = await buildContext({
+      projectRoot: root,
+      config: testConfig(),
+      clock: CLOCK,
+      initStateIfMissing: true,
+    });
+
+    await expect(
+      advanceWorkflow(ctx, { phase: "building", lastCommand: "build" }),
+    ).rejects.toThrow(/Illegal workflow transition 'uninitialized' → 'building'/);
+
+    const onDisk = await readState(root);
+    expect(onDisk.status.phase).toBe("uninitialized");
+    expect(onDisk.status.last_command).toBeNull();
+  });
+
+  it("allows an idempotent re-run that stays in the current phase", async () => {
+    const root = await makeTmpDir();
+    const ctx = await buildContext({
+      projectRoot: root,
+      config: testConfig(),
+      clock: CLOCK,
+      initStateIfMissing: true,
+    });
+    await advanceWorkflow(ctx, { phase: "intake", lastCommand: "intake" });
+
+    const next = await advanceWorkflow(ctx, {
+      phase: "intake",
+      lastCommand: "intake",
+      artifacts: { intake: "intake.md" },
+    });
+
+    expect(next.status.phase).toBe("intake");
+    expect(next.artifacts.intake).toBe("intake.md");
+  });
+
+  it("allows the deliberate uninitialized → clarification bootstrap", async () => {
+    const root = await makeTmpDir();
+    const ctx = await buildContext({
+      projectRoot: root,
+      config: testConfig(),
+      clock: CLOCK,
+      initStateIfMissing: true,
+    });
+
+    const next = await advanceWorkflow(ctx, {
+      phase: "clarification",
+      lastCommand: "intake",
+    });
+
+    expect(next.status.phase).toBe("clarification");
+    expect(next.status.next_recommended_command).toBe("clarify");
+  });
+
+  it("allows blocking from any non-terminal phase and resuming out of it", async () => {
+    const root = await makeTmpDir();
+    const ctx = await buildContext({
+      projectRoot: root,
+      config: testConfig(),
+      clock: CLOCK,
+      initStateIfMissing: true,
+    });
+    await advanceWorkflow(ctx, {
+      phase: "blocked",
+      lastCommand: "validate",
+      blockers: ["deferred checks"],
+    });
+
+    const resumed = await advanceWorkflow(ctx, {
+      phase: "ready_for_pr",
+      lastCommand: "validate",
+      blockers: [],
+    });
+
+    expect(resumed.status.phase).toBe("ready_for_pr");
+    expect(resumed.status.blockers).toEqual([]);
+  });
 });

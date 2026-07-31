@@ -32,6 +32,7 @@ import {
   updateState,
 } from "../../src/core/state/index.js";
 import { createLogger, type Logger } from "../../src/core/logging/index.js";
+import type { WorkflowState } from "../../src/core/workflow/index.js";
 import { fixedClock, systemClock } from "../../src/utils/time.js";
 import type {
   CommandRunner,
@@ -107,12 +108,26 @@ async function writeCriteria(root: string, content: string): Promise<void> {
   );
 }
 
+/**
+ * Seed the workflow phase directly (plain state write). advanceWorkflow and
+ * the shared runner now enforce transition legality, so fixtures jump to the
+ * phase under test here instead of advancing illegally from a fresh state.
+ */
+async function seedPhase(root: string, phase: WorkflowState): Promise<void> {
+  await updateState(
+    root,
+    (s) => ({ ...s, status: { ...s.status, phase } }),
+    { clock: systemClock, artifactDir: ".oswald" },
+  );
+}
+
 /** Drive the real validate tentacle until the workflow parks in blocked. */
 async function blockViaValidate(
   root: string,
   ticketId: string,
   logger: Logger,
 ): Promise<void> {
+  await seedPhase(root, "validating");
   const outcome = await runTentacleCommand({
     id: "validate",
     command: "validate",
@@ -150,6 +165,7 @@ async function blockViaExternalValidate(
   ticketId: string,
   logger: Logger,
 ): Promise<void> {
+  await seedPhase(root, "validating");
   const outcome = await runTentacleCommand({
     id: "validate",
     command: "validate",
@@ -183,7 +199,7 @@ describe("advanceWorkflow: blocked_from bookkeeping", () => {
       initStateIfMissing: true,
     });
 
-    await advanceWorkflow(ctx, { phase: "validating", lastCommand: "build" });
+    await seedPhase(root, "validating");
     const blocked = await advanceWorkflow(ctx, {
       phase: "blocked",
       lastCommand: "validate",
@@ -204,7 +220,7 @@ describe("advanceWorkflow: blocked_from bookkeeping", () => {
       initStateIfMissing: true,
     });
 
-    await advanceWorkflow(ctx, { phase: "validating", lastCommand: "build" });
+    await seedPhase(root, "validating");
     await advanceWorkflow(ctx, { phase: "blocked", lastCommand: "validate" });
     const reblocked = await advanceWorkflow(ctx, {
       phase: "blocked",
@@ -223,7 +239,7 @@ describe("advanceWorkflow: blocked_from bookkeeping", () => {
       initStateIfMissing: true,
     });
 
-    await advanceWorkflow(ctx, { phase: "validating", lastCommand: "build" });
+    await seedPhase(root, "validating");
     await advanceWorkflow(ctx, { phase: "blocked", lastCommand: "validate" });
     const resumed = await advanceWorkflow(ctx, {
       phase: "ready_for_pr",
@@ -254,7 +270,7 @@ describe("advanceWorkflow: blocked_mode fidelity bookkeeping", () => {
       clock: CLOCK,
       initStateIfMissing: true,
     });
-    await advanceWorkflow(ctx, { phase: "validating", lastCommand: "build" });
+    await seedPhase(root, "validating");
     return { root, ctx };
   }
 
