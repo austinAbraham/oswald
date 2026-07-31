@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { promises as fs } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { buildContext } from "../../../src/tentacles/base.js";
+import { buildContext, type TentacleContext } from "../../../src/tentacles/base.js";
 import { deliveryTentacle } from "../../../src/tentacles/delivery/index.js";
 import {
   classifyChangedFile,
@@ -15,7 +15,7 @@ import {
 } from "../../../src/tentacles/delivery/parse.js";
 import { MockRepoProvider, MockTicketProvider } from "../../../src/tools/index.js";
 import { parseConfig } from "../../../src/core/config/index.js";
-import { readState } from "../../../src/core/state/index.js";
+import { readState, updateState } from "../../../src/core/state/index.js";
 import { fixedClock } from "../../../src/utils/time.js";
 
 const CLOCK = fixedClock("2026-06-22T00:00:00.000Z");
@@ -94,6 +94,15 @@ async function seedUpstream(
   }
 }
 
+/** Move a freshly-seeded state into the phase the tentacle under test owns. */
+async function seedReadyForPrPhase(ctx: TentacleContext): Promise<void> {
+  ctx.state = await updateState(
+    ctx.artifacts.root,
+    (s) => ({ ...s, status: { ...s.status, phase: "ready_for_pr" } }),
+    { clock: CLOCK },
+  );
+}
+
 async function buildDeliveryCtx(opts: {
   root: string;
   options?: Record<string, unknown>;
@@ -102,7 +111,7 @@ async function buildDeliveryCtx(opts: {
     : never;
   ticketId?: string;
 }) {
-  return buildContext({
+  const ctx = await buildContext({
     projectRoot: opts.root,
     config: cfg(),
     clock: CLOCK,
@@ -111,6 +120,8 @@ async function buildDeliveryCtx(opts: {
     ...(opts.providers ? { providers: opts.providers } : {}),
     options: opts.options ?? {},
   });
+  await seedReadyForPrPhase(ctx);
+  return ctx;
 }
 
 // ---------------------------------------------------------------------------

@@ -33,7 +33,10 @@ import { z } from "zod";
 import type { Command } from "commander";
 import { buildContext, advanceWorkflow } from "../../tentacles/base.js";
 import { policyFromConfig, type ApprovalService } from "../../core/approvals/index.js";
-import { recommendNextCommand } from "../../core/workflow/index.js";
+import {
+  assertLegalTransition,
+  recommendNextCommand,
+} from "../../core/workflow/index.js";
 import { pathExists } from "../../utils/fs.js";
 import { logger, type Logger } from "../../core/logging/index.js";
 import { resolveConfig } from "./_config.js";
@@ -62,11 +65,33 @@ const OptionsSchema = z.object({
   cwd: z.string(),
 });
 
-const IMPLEMENTATION_PLAN = "implementation_plan.md";
-const MODEL_PLAN = "model_plan.md";
-const CHANGED_FILES_PLAN = "changed_files.md";
+/**
+ * Planning artifacts the build command reads — the LITERAL filenames the
+ * planning tentacle writes. The implementation plan is REQUIRED (build stops
+ * without it); the other two enrich the preview when present.
+ */
+export const BUILD_INPUT_ARTIFACTS = {
+  implementationPlan: "implementation_plan.md",
+  modelPlan: "model_plan.md",
+  changedFiles: "changed_files.md",
+} as const;
+
+const IMPLEMENTATION_PLAN = BUILD_INPUT_ARTIFACTS.implementationPlan;
+const MODEL_PLAN = BUILD_INPUT_ARTIFACTS.modelPlan;
+const CHANGED_FILES_PLAN = BUILD_INPUT_ARTIFACTS.changedFiles;
 const BUILD_PREVIEW = "build_preview.md";
 const BUILD_MANIFEST = "changed_files.json";
+
+/**
+ * Planning artifacts `build` reads / artifacts it writes. Mirrored by the
+ * drift checker's consumption-edge table (kept aligned by a unit test).
+ */
+export const INPUT_ARTIFACTS = [
+  IMPLEMENTATION_PLAN,
+  MODEL_PLAN,
+  CHANGED_FILES_PLAN,
+] as const;
+export const OUTPUT_ARTIFACTS = [BUILD_PREVIEW, BUILD_MANIFEST] as const;
 
 export function registerBuild(program: Command): void {
   program
@@ -124,6 +149,11 @@ export function registerBuild(program: Command): void {
         });
         phaseBefore = ctx.state.status.phase;
         approvalService = ctx.approvals;
+
+        // Pre-flight the state machine BEFORE any side effect: an out-of-order
+        // build must refuse here, while no model file has been written and no
+        // artifact touched (advanceWorkflow re-asserts this as the backstop).
+        assertLegalTransition(ctx.state.status.phase, "validating");
 
         // --- Read the implementation plan (required input). -----------------
         if (!(await ctx.artifacts.exists(IMPLEMENTATION_PLAN))) {

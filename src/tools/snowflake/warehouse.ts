@@ -19,7 +19,13 @@
  *     before they leave the provider.
  *   - NO SECRETS: only a connection NAME is held; credentials live in `snow`'s
  *     own config and never touch argv/env/logs.
+ *   - AUDITED: with an {@link AuditSink}, the internal read-only gate records
+ *     every verdict (`sql_validated`) and the single runner seam records every
+ *     spawned statement (`sql_executed`) — statement hash + outcome only,
+ *     never raw SQL — so metadata queries (SHOW/DESCRIBE/information_schema)
+ *     land in the ledger alongside the EDA queries.
  */
+import { sha256Hex, type AuditSink } from "../../core/audit/ledger.js";
 import {
   SqlSafetyValidator,
   type SqlSafetyOptions,
@@ -82,6 +88,7 @@ export class SnowflakeWarehouseProvider implements WarehouseProvider {
   private readonly validator: SqlSafetyValidator;
   private readonly detector: SensitiveFieldDetector;
   private readonly runner: SnowRunner;
+  private readonly audit: AuditSink | undefined;
 
   constructor(options: SnowflakeProviderOptions) {
     this.command = options.command;
@@ -89,7 +96,10 @@ export class SnowflakeWarehouseProvider implements WarehouseProvider {
     this.timeoutMs = options.timeoutMs;
     this.dialect = options.dialect ?? "snow";
     const sqlOptions: SqlSafetyOptions = options.sql ?? {};
-    this.validator = new SqlSafetyValidator(sqlOptions);
+    this.audit = options.audit ?? sqlOptions.audit;
+    this.validator = new SqlSafetyValidator(
+      this.audit ? { ...sqlOptions, audit: this.audit } : sqlOptions,
+    );
     this.detector = new SensitiveFieldDetector({
       enabled: options.maskSensitive ?? true,
     });
@@ -122,6 +132,43 @@ export class SnowflakeWarehouseProvider implements WarehouseProvider {
   }
 
   /**
+   * The single spawn seam: EVERY statement the provider actually runs goes
+   * through here, so each execution lands in the audit ledger (statement hash,
+   * leading keyword, and outcome only — never the SQL text or result values).
+   */
+  private async runRecorded(sql: string): Promise<SnowQueryOutcome> {
+    try {
+      const outcome = await this.runner(sql, this.runOptions());
+      this.recordExecution(sql, {
+        ok: outcome.ok,
+        ...(outcome.rows ? { rows: outcome.rows.length } : {}),
+        ...(outcome.truncated ? { truncated: true } : {}),
+        ...(outcome.ok ? {} : { error: outcome.reason ?? "snow query failed" }),
+      });
+      return outcome;
+    } catch (err) {
+      this.recordExecution(sql, {
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      throw err;
+    }
+  }
+
+  /** Append one `sql_executed` record for a spawned statement. */
+  private recordExecution(
+    sql: string,
+    outcome: Record<string, unknown>,
+  ): void {
+    this.audit?.record("sql_executed", {
+      provider: this.name,
+      query: sql.trimStart().split(/\s+/, 1)[0]?.toUpperCase() ?? "?",
+      sql_sha256: sha256Hex(sql),
+      ...outcome,
+    });
+  }
+
+  /**
    * Validate a statement read-only, then run it via the runner. Returns the raw
    * runner outcome (rows not yet redacted). Refuses non-read-only WITHOUT
    * spawning. Internal — the public methods layer redaction / shaping on top.
@@ -136,7 +183,7 @@ export class SnowflakeWarehouseProvider implements WarehouseProvider {
         reason: verdict.reason ?? "blocked by SQL safety gate",
       };
     }
-    return this.runner(verdict.normalizedSql ?? sql, this.runOptions());
+    return this.runRecorded(verdict.normalizedSql ?? sql);
   }
 
   async health(): Promise<HealthReport> {
@@ -198,10 +245,7 @@ export class SnowflakeWarehouseProvider implements WarehouseProvider {
     if (!verdict.allowed) {
       return { ok: false, error: verdict.reason };
     }
-    const outcome = await this.runner(
-      verdict.normalizedSql ?? sql,
-      this.runOptions(),
-    );
+    const outcome = await this.runRecorded(verdict.normalizedSql ?? sql);
     if (!outcome.ok) {
       return { ok: false, error: outcome.reason ?? "snow query failed" };
     }

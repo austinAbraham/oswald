@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { promises as fs } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { buildContext } from "../../../src/tentacles/base.js";
+import { buildContext, type TentacleContext } from "../../../src/tentacles/base.js";
 import {
   validationTentacle,
   parseAcceptanceArtifact,
@@ -20,7 +20,7 @@ import {
   type CommandOutcome,
 } from "../../../src/tentacles/validation/expectations.js";
 import { parseConfig } from "../../../src/core/config/index.js";
-import { readState } from "../../../src/core/state/index.js";
+import { readState, updateState } from "../../../src/core/state/index.js";
 import { fixedClock } from "../../../src/utils/time.js";
 
 const CLOCK = fixedClock("2026-06-22T00:00:00.000Z");
@@ -43,6 +43,15 @@ function cfg() {
   return parseConfig({ project: { name: "demo" } });
 }
 
+/** Move a freshly-seeded state into the phase the tentacle under test owns. */
+async function seedValidatingPhase(ctx: TentacleContext): Promise<void> {
+  ctx.state = await updateState(
+    ctx.artifacts.root,
+    (s) => ({ ...s, status: { ...s.status, phase: "validating" } }),
+    { clock: CLOCK },
+  );
+}
+
 /** Seed a project root with an intake-style acceptance_criteria.md artifact. */
 async function seedAcceptance(criteria: string[]): Promise<string> {
   const root = await makeTmpDir();
@@ -53,6 +62,7 @@ async function seedAcceptance(criteria: string[]): Promise<string> {
     initStateIfMissing: true,
     ticketId: "DEMO-1",
   });
+  await seedValidatingPhase(ctx);
   const md = ctx.artifacts.renderMarkdown({
     title: "Acceptance Criteria: Demo",
     summary: "Parsed from the ticket.",
@@ -402,6 +412,7 @@ describe("validation tentacle: untrusted criteria + redaction", () => {
         ],
       },
     });
+    await seedValidatingPhase(ctx);
 
     const result = await validationTentacle.run(ctx);
     expect(result.output?.injectionDetected).toBe(true);
@@ -424,6 +435,7 @@ describe("validation tentacle: no acceptance criteria (degraded)", () => {
       ticketId: "DEMO-1",
       initStateIfMissing: true,
     });
+    await seedValidatingPhase(ctx);
 
     const result = await validationTentacle.run(ctx);
     expect(

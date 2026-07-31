@@ -9,6 +9,7 @@ const OptionsSchema = z.object({
   open: z.boolean().optional(),
   yes: z.boolean().optional(),
   json: z.boolean().optional(),
+  strictProviders: z.boolean().optional(),
   cwd: z.string(),
 });
 
@@ -21,6 +22,7 @@ export function registerPr(program: Command): void {
     .option("--open", "open the pull request (requires approval + a repo provider)")
     .option("-y, --yes", "grant explicit approval for gated side effects")
     .option("--json", "emit one machine-readable JSON step report on stdout (CI mode)")
+    .option("--strict-providers", "fail (exit 1) instead of falling back to a mock provider")
     .option("-C, --cwd <dir>", "project root", process.cwd())
     .addHelpText(
       "after",
@@ -31,7 +33,7 @@ export function registerPr(program: Command): void {
       const cwd = path.resolve(opts.cwd);
 
       // Opening a PR needs a repo provider; drafting does not.
-      const providers = selectProviders({ cwd, repo: Boolean(opts.open) });
+      const { providers, resolution } = selectProviders({ cwd, repo: Boolean(opts.open) });
 
       const { exitCode } = await runTentacleCommand({
         id: "delivery",
@@ -40,6 +42,8 @@ export function registerPr(program: Command): void {
         ticketId: ticket,
         options: { decisionNote: "pr CLI" },
         providers,
+        providerResolution: resolution,
+        ...(opts.strictProviders ? { strictProviders: true } : {}),
         approval: {
           ...(opts.yes ? { yes: true } : {}),
           ...(opts.open ? { open: true } : {}),

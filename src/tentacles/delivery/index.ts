@@ -53,6 +53,17 @@ export const ARTIFACT_NAMES = {
   handoffNotes: "handoff_notes.md",
 } as const;
 
+/**
+ * Upstream artifacts this tentacle reads (primary names; legacy fallbacks are
+ * handled at the read site). Mirrored by the drift checker's consumption-edge
+ * table (kept aligned by a unit test).
+ */
+export const INPUT_ARTIFACTS = {
+  validation: "validation_report.md",
+  plan: "implementation_plan.md",
+  requirements: "requirements.md",
+} as const;
+
 // --- I/O schemas -----------------------------------------------------------
 
 export const DeliveryInputSchema = z.object({
@@ -156,6 +167,8 @@ export const deliveryTentacle: Tentacle<
   description:
     "Package completed work for human review and keep external systems updated — summarize changed files, write a PR description with validation evidence, draft a ticket update, append the decision log, and write handoff + release notes. Branch/PR/ticket writes are draft-by-default and gated through the ApprovalService.",
 
+  advancesTo: "shipped",
+
   inputSchema: DeliveryInputSchema,
   outputSchema: DeliveryOutputSchema,
 
@@ -200,16 +213,23 @@ export const deliveryTentacle: Tentacle<
     // tentacle writes `validation_report.md` (falling back to the legacy
     // `validation.md` name if present); planning writes `implementation_plan.md`.
     const rawValidation =
-      (await readArtifactIfExists(ctx, "validation_report.md")) ??
+      (await readArtifactIfExists(ctx, INPUT_ARTIFACTS.validation)) ??
       (await readArtifactIfExists(ctx, "validation.md"));
     const rawPlan =
-      (await readArtifactIfExists(ctx, "implementation_plan.md")) ??
+      (await readArtifactIfExists(ctx, INPUT_ARTIFACTS.plan)) ??
       (await readArtifactIfExists(ctx, "plan.md"));
-    const rawRequirements = await readArtifactIfExists(ctx, "requirements.md");
+    const rawRequirements = await readArtifactIfExists(
+      ctx,
+      INPUT_ARTIFACTS.requirements,
+    );
 
-    const validation = neutralize(ctx, rawValidation, "validation_report.md");
-    const plan = neutralize(ctx, rawPlan, "implementation_plan.md");
-    const requirements = neutralize(ctx, rawRequirements, "requirements.md");
+    const validation = neutralize(ctx, rawValidation, INPUT_ARTIFACTS.validation);
+    const plan = neutralize(ctx, rawPlan, INPUT_ARTIFACTS.plan);
+    const requirements = neutralize(
+      ctx,
+      rawRequirements,
+      INPUT_ARTIFACTS.requirements,
+    );
 
     const injectionDetected =
       validation.detected || plan.detected || requirements.detected;

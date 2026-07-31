@@ -4,6 +4,7 @@ import type { Command } from "commander";
 import { runTentacleCommand, failureStepReport } from "./_run.js";
 import { selectProviders, type SnowflakeSettings } from "./_providers.js";
 import { resolveConfig } from "./_config.js";
+import { AuditLedger } from "../../core/audit/index.js";
 import { logger } from "../../core/logging/index.js";
 
 const OptionsSchema = z.object({
@@ -16,6 +17,7 @@ const OptionsSchema = z.object({
   warehouseCommand: z.string().optional(),
   queryTimeout: z.coerce.number().int().positive().optional(),
   json: z.boolean().optional(),
+  strictProviders: z.boolean().optional(),
   cwd: z.string(),
 });
 
@@ -33,6 +35,7 @@ export function registerEda(program: Command): void {
     .option("--warehouse-command <cmd>", "warehouse CLI invocation (default: 'snow')")
     .option("--query-timeout <ms>", "per-query subprocess timeout in ms")
     .option("--json", "emit one machine-readable JSON step report on stdout (CI mode)")
+    .option("--strict-providers", "fail (exit 1) instead of falling back to a mock provider")
     .option("-C, --cwd <dir>", "project root", process.cwd())
     .addHelpText(
       "after",
@@ -83,7 +86,18 @@ export function registerEda(program: Command): void {
         return;
       }
 
-      const providers = selectProviders({ cwd, warehouse, snowflake });
+      // One ledger instance owns the hash chain for this run: provider
+      // fallbacks recorded here and the tentacle's events share it.
+      const audit = new AuditLedger(cwd, {
+        artifactDir: config.paths.artifact_dir,
+        logger,
+      });
+      const { providers, resolution } = selectProviders({
+        cwd,
+        warehouse,
+        snowflake,
+        audit,
+      });
 
       const options: Record<string, unknown> = { execute };
       if (opts.tables) {
@@ -101,6 +115,9 @@ export function registerEda(program: Command): void {
         options,
         providers,
         json: Boolean(opts.json),
+        audit,
+        providerResolution: resolution,
+        ...(opts.strictProviders ? { strictProviders: true } : {}),
       });
       process.exitCode = exitCode;
     });

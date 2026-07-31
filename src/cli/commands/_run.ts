@@ -5,11 +5,20 @@
  * update-ticket) funnels through {@link runTentacleCommand}. It:
  *   1. builds a fully-wired {@link TentacleContext} via `buildContext`,
  *   2. looks the tentacle up in the registry by id,
- *   3. runs it,
- *   4. prints the STANDARD output block — what it did, where artifacts landed,
- *      and the suggested next command,
+ *   3. pre-flights the workflow transition (current phase → the tentacle's
+ *      `advancesTo`) and REFUSES an out-of-order command before any side
+ *      effect runs, then runs the tentacle,
+ *   4. prints the STANDARD output block — what it did, the provider resolution
+ *      table (requested vs resolved), where artifacts landed, and the suggested
+ *      next command,
  *   5. returns a process exit code (0 on success, non-zero on hard error or a
  *      blocked workflow state).
+ *
+ * Provider strictness: when `--strict-providers` is passed (or
+ * `policies.strict_providers` is true in config) any SILENT provider fallback
+ * (e.g. snowflake→mock because `snow` is missing) refuses to run — exit 1 with
+ * a remediation hint — so mock results can never masquerade as real evidence.
+ * Default behavior is unchanged: fallback with a warning plus a visible table.
  *
  * Approval flags (`--yes`/`--draft`/`--post`/`--open`/`--apply`) are mapped into
  * the tentacle `options` here so each tentacle (and the ApprovalService it
@@ -25,13 +34,21 @@
  */
 import * as path from "node:path";
 import { buildContext } from "../../tentacles/base.js";
-import type { TentacleProviders } from "../../tentacles/base.js";
+import type { TentacleContext, TentacleProviders } from "../../tentacles/base.js";
 import { getTentacle } from "../../tentacles/registry.js";
+import type { AuditLedger } from "../../core/audit/index.js";
 import { readState, updateState } from "../../core/state/index.js";
-import { recommendNextCommand } from "../../core/workflow/index.js";
+import {
+  assertLegalTransition,
+  recommendNextCommand,
+} from "../../core/workflow/index.js";
 import { logger as defaultLogger, type Logger } from "../../core/logging/index.js";
 import type { ApprovalService } from "../../core/approvals/index.js";
 import { resolveConfig } from "./_config.js";
+import {
+  renderProviderResolution,
+  type ProviderResolutionEntry,
+} from "./_providers.js";
 
 /** Flags that, when present, grant explicit consent for a side-effecting write. */
 export interface ApprovalFlags {
@@ -56,6 +73,13 @@ export interface ApprovalFlags {
  * `--draft` always wins (forces draft-only). Otherwise any of `--yes/--post/
  * --open/--apply` grants consent. The ApprovalService still independently
  * checks policy, so consent here is necessary but never sufficient.
+ *
+ * The returned boolean is always explicit: `false` reaches the
+ * ApprovalService as an explicit decline, which also blocks policy-granted
+ * consent (`policies.autonomy.auto_approve`) — so `--draft` forces draft-only
+ * regardless of policy. Policy-granted consent is only reachable via
+ * `consentMode: "policy"` (see {@link RunTentacleCommandArgs}), a deliberate
+ * opt-in reserved for an autonomous runner — never the interactive CLI.
  */
 export function resolveConsent(flags: ApprovalFlags): boolean {
   if (flags.draft) return false;
@@ -173,6 +197,23 @@ export function failureStepReport(opts: {
   };
 }
 
+/**
+ * Consent mapping for `consentMode: "policy"` — the deliberate opt-in used by
+ * an autonomous runner. `--draft` still collapses to an explicit decline and
+ * any explicit consent flag still wins; only the flag-less middle ground is
+ * left `undefined` so the ApprovalService may consult
+ * `policies.autonomy.auto_approve`.
+ */
+export function resolvePolicyModeConsent(
+  flags: ApprovalFlags | undefined,
+): boolean | undefined {
+  if (!flags) return undefined;
+  if (flags.draft) return false;
+  return flags.yes || flags.post || flags.open || flags.apply
+    ? true
+    : undefined;
+}
+
 export interface RunTentacleCommandArgs {
   /** Registry id of the tentacle to run (e.g. "intake", "validate"). */
   id: string;
@@ -186,8 +227,31 @@ export interface RunTentacleCommandArgs {
   options?: Record<string, unknown>;
   /** Providers to wire into the context (degrade by omission). */
   providers?: TentacleProviders;
+  /**
+   * The requested→resolved provider report from `selectProviders`. Printed as
+   * a one-line table in the standard output block; under strict providers any
+   * `fallback: true` entry is a hard failure before the tentacle runs.
+   */
+  providerResolution?: ProviderResolutionEntry[];
+  /**
+   * The `--strict-providers` flag. OR-ed with `policies.strict_providers`
+   * from config; when effective, a silent provider fallback exits 1.
+   */
+  strictProviders?: boolean;
   /** Approval flags → mapped into `options.yes`. */
   approval?: ApprovalFlags;
+  /**
+   * How consent is derived when approval flags are absent or neutral.
+   *
+   * - `"explicit"` (the default): the absence of flags collapses to an
+   *   explicit `yes: false`, so the ApprovalService can NEVER fall through to
+   *   policy-granted consent. Every interactive CLI command uses this mode —
+   *   consent flags are never defaults.
+   * - `"policy"`: the deliberate opt-in for an autonomous runner. Flag-less
+   *   runs pass `yes: undefined`, letting `policies.autonomy.auto_approve`
+   *   (level `auto_safe`) speak. `--draft` and explicit flags still win.
+   */
+  consentMode?: "explicit" | "policy";
   /** Seed initial state if `.oswald/state.yml` does not exist (intake only). */
   initStateIfMissing?: boolean;
   /** Logger override (tests). */
@@ -200,6 +264,8 @@ export interface RunTentacleCommandArgs {
   json?: boolean;
   /** Raw stdout sink for machine output (tests). Defaults to console.log. */
   stdout?: (line: string) => void;
+  /** Audit ledger override (when the command already holds the instance). */
+  audit?: AuditLedger;
 }
 
 /** Result of running a tentacle command. */
@@ -253,7 +319,10 @@ export async function runTentacleCommand(
     return { exitCode: 1, artifactsWritten: [], nextCommand: null, report };
   }
 
-  const consent = args.approval ? resolveConsent(args.approval) : undefined;
+  const consent =
+    args.consentMode === "policy"
+      ? resolvePolicyModeConsent(args.approval)
+      : resolveConsent(args.approval ?? {});
   const options: Record<string, unknown> = {
     ...(args.options ?? {}),
     ...(consent !== undefined ? { yes: consent } : {}),
@@ -265,9 +334,38 @@ export async function runTentacleCommand(
   let approvals: ApprovalService | null = null;
 
   let outcome: RunOutcome;
+  let ctx: TentacleContext | undefined;
   try {
     const config = await resolveConfig(args.cwd);
-    const ctx = await buildContext({
+
+    // --- Provider strictness gate. Runs BEFORE the tentacle so a mock never
+    // masquerades as real evidence: under `--strict-providers` (or
+    // `policies.strict_providers: true`) any silent fallback is a hard failure.
+    const resolution = args.providerResolution ?? [];
+    const strict = Boolean(args.strictProviders) || config.policies.strict_providers;
+    const fallbacks = resolution.filter((e) => e.fallback);
+    if (strict && fallbacks.length > 0) {
+      log.error(
+        `${args.command}: provider fallback refused (strict providers) — ${renderProviderResolution(resolution)}`,
+      );
+      for (const f of fallbacks) {
+        log.error(
+          `  ${f.slot}: requested '${f.requested}' but resolved '${f.resolved}'${
+            f.reason ? ` — ${f.reason}` : ""
+          }${f.remediation ? `. Fix: ${f.remediation}` : ""}`,
+        );
+      }
+      const report = failureStepReport({
+        command: args.command,
+        ticket: args.ticketId,
+        exitCode: 1,
+        error: "provider fallback refused (strict providers)",
+      });
+      if (json) emit(JSON.stringify(report));
+      return { exitCode: 1, artifactsWritten: [], nextCommand: null, report };
+    }
+
+    ctx = await buildContext({
       projectRoot: args.cwd,
       config,
       ...(args.ticketId ? { ticketId: args.ticketId } : {}),
@@ -275,9 +373,16 @@ export async function runTentacleCommand(
       ...(args.providers ? { providers: args.providers } : {}),
       ...(args.initStateIfMissing ? { initStateIfMissing: true } : {}),
       logger: runLog,
+      ...(args.audit ? { audit: args.audit } : {}),
     });
     phaseBefore = ctx.state.status.phase;
     approvals = ctx.approvals;
+
+    // Pre-flight the state machine BEFORE any side effect: an out-of-order
+    // command must refuse here — while nothing has been posted, written, or
+    // archived — not after the tentacle has already committed external writes.
+    // `advanceWorkflow` re-asserts the same rule afterwards as the backstop.
+    assertLegalTransition(ctx.state.status.phase, tentacle.advancesTo);
 
     // Persist the targeted ticket id into state so downstream commands and
     // `next --run` can recover it. (Tentacles advance the phase but do not own
@@ -331,6 +436,7 @@ export async function runTentacleCommand(
     } else {
       // --- Standard output block. -----------------------------------------
       log.success(`${args.command}: ${result.summary}`);
+      log.info(`  providers: ${renderProviderResolution(resolution)}`);
 
       if (result.warnings && result.warnings.length > 0) {
         for (const w of result.warnings) log.warn(`  warning: ${w}`);
@@ -352,7 +458,14 @@ export async function runTentacleCommand(
       if (blocked) {
         log.warn(`  state: BLOCKED — ${state.status.blockers.length} blocker(s)`);
         for (const b of state.status.blockers) log.warn(`    - ${b}`);
-        log.info("  next:  resolve the blocker(s), then re-run validate");
+        // When the blocking run executed REAL external checks, the recovery hint
+        // must carry `--dbt`: a local-only resume cannot (and will refuse to)
+        // clear an external block.
+        const externalBlock = state.status.blocked_mode === "external";
+        const resumeCmd = `oswald resume${args.ticketId ? ` ${args.ticketId}` : ""}${externalBlock ? " --dbt" : ""}`;
+        log.info(
+          `  next:  resolve the blocker(s), then run '${resumeCmd}' to re-run the blocking check${externalBlock ? " (the block came from a REAL external run)" : ""}`,
+        );
       } else if (nextCommand) {
         log.info(`  next:  oswald ${nextCommand}`);
       } else {
@@ -366,6 +479,19 @@ export async function runTentacleCommand(
       nextCommand,
       report,
     };
+
+    // Persist the step outcome to the audit ledger (paths project-relative).
+    ctx.audit.record("step_outcome", {
+      command: args.command,
+      tentacle: args.id,
+      ...(args.ticketId ? { ticket: args.ticketId } : {}),
+      ...(phaseBefore ? { phase_before: phaseBefore } : {}),
+      phase_after: state.status.phase,
+      exit_code: outcome.exitCode,
+      artifacts: result.artifactsWritten.map(
+        (p) => path.relative(args.cwd, p) || p,
+      ),
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     // Diagnostics always go to stderr, so `--json` stdout stays parseable.
@@ -388,7 +514,17 @@ export async function runTentacleCommand(
     };
     if (json) emit(JSON.stringify(report));
     outcome = { exitCode: 1, artifactsWritten: [], nextCommand: null, report };
+
+    // Best-effort failure record; the ledger never sees absolute user paths.
+    ctx?.audit.record("step_outcome", {
+      command: args.command,
+      tentacle: args.id,
+      ...(args.ticketId ? { ticket: args.ticketId } : {}),
+      ...(phaseBefore ? { phase_before: phaseBefore } : {}),
+      exit_code: 1,
+      error: message.split(args.cwd).join("."),
+    });
   }
 
-  return outcome;
+    return outcome;
 }

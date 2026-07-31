@@ -25,6 +25,9 @@ import {
 } from "../../src/cli/commands/_run.js";
 import { buildProgram } from "../../src/cli/index.js";
 import { createLogger, type Logger } from "../../src/core/logging/index.js";
+import { updateState } from "../../src/core/state/index.js";
+import type { WorkflowState } from "../../src/core/workflow/index.js";
+import { systemClock } from "../../src/utils/time.js";
 
 const tmpDirs: string[] = [];
 
@@ -101,6 +104,19 @@ async function seedIntake(root: string, ticketId: string): Promise<void> {
     initStateIfMissing: true,
     logger,
   });
+}
+
+/**
+ * Seed the workflow phase directly (plain state write): the shared runner
+ * pre-flights transition legality, so fixtures jump to the phase under test
+ * instead of advancing illegally from a fresh intake.
+ */
+async function seedPhase(root: string, phase: WorkflowState): Promise<void> {
+  await updateState(
+    root,
+    (s) => ({ ...s, status: { ...s.status, phase } }),
+    { clock: systemClock, artifactDir: ".oswald" },
+  );
 }
 
 describe("consentSource", () => {
@@ -206,6 +222,7 @@ describe("--json step report: blocked (exit 2)", () => {
   it("serializes a blocked run as ok:false / exit_code 2 with blockers", async () => {
     const root = await makeTmpDir();
     await seedIntake(root, "CI-3");
+    await seedPhase(root, "validating");
     const { logger } = captureLogger();
     const stdoutLines: string[] = [];
 
@@ -295,6 +312,7 @@ describe("--json step report: approval decisions", () => {
   it("reports denied decisions with consent_source --draft (draft always wins)", async () => {
     const root = await makeTmpDir();
     await seedIntake(root, "CI-5");
+    await seedPhase(root, "ready_for_ticket_update");
     const { logger } = captureLogger();
     const stdoutLines: string[] = [];
 
@@ -326,6 +344,7 @@ describe("--json step report: approval decisions", () => {
   it("reports allowed decisions with consent_source --open when consent is granted", async () => {
     const root = await makeTmpDir();
     await seedIntake(root, "CI-6");
+    await seedPhase(root, "ready_for_ticket_update");
     const { logger } = captureLogger();
     const stdoutLines: string[] = [];
 
@@ -417,6 +436,7 @@ staged from \`stg_stripe_charges\`.
   it("emits exactly one valid JSON document on stdout for a dry-run build", async () => {
     const root = await makeTmpDir();
     await seedIntake(root, "CI-9");
+    await seedPhase(root, "building");
     await seedPlan(root);
 
     const { stdoutLines, exitCode } = await runBuildProgram(root, [
@@ -433,7 +453,7 @@ staged from \`stg_stripe_charges\`.
     expect(report.command).toBe("build");
     expect(report.ticket).toBe("CI-9");
     expect(report.exit_code).toBe(0);
-    expect(report.phase_before).toBe("clarification");
+    expect(report.phase_before).toBe("building");
     expect(report.phase_after).toBe("validating");
     expect(report.blocked).toBe(false);
     expect(report.summary).toMatch(/dry-run/);
@@ -459,6 +479,7 @@ staged from \`stg_stripe_charges\`.
   it("emits a valid ok:false document when the implementation plan is missing", async () => {
     const root = await makeTmpDir();
     await seedIntake(root, "CI-10"); // state exists, but no plan artifact
+    await seedPhase(root, "building");
 
     const { stdoutLines, exitCode } = await runBuildProgram(root, [
       "CI-10",
@@ -472,7 +493,7 @@ staged from \`stg_stripe_charges\`.
     expect(report.exit_code).toBe(1);
     expect(report.command).toBe("build");
     expect(report.error).toMatch(/implementation_plan/);
-    expect(report.phase_before).toBe("clarification");
+    expect(report.phase_before).toBe("building");
     expect(report.artifacts).toEqual([]);
     expect(Object.keys(report)).toEqual(STEP_REPORT_KEYS);
   });
@@ -498,6 +519,7 @@ staged from \`stg_stripe_charges\`.
   it("default human mode is unchanged: no JSON on stdout, standard block printed", async () => {
     const root = await makeTmpDir();
     await seedIntake(root, "CI-12");
+    await seedPhase(root, "building");
     await seedPlan(root);
 
     const { stdoutLines, exitCode } = await runBuildProgram(root, ["CI-12"]);

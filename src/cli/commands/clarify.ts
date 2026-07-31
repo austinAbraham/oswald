@@ -9,6 +9,7 @@ const OptionsSchema = z.object({
   postComment: z.boolean().optional(),
   yes: z.boolean().optional(),
   json: z.boolean().optional(),
+  strictProviders: z.boolean().optional(),
   cwd: z.string(),
 });
 
@@ -21,6 +22,7 @@ export function registerClarify(program: Command): void {
     .option("--post-comment", "post the clarification comment (requires approval)")
     .option("-y, --yes", "grant explicit approval for gated side effects")
     .option("--json", "emit one machine-readable JSON step report on stdout (CI mode)")
+    .option("--strict-providers", "fail (exit 1) instead of falling back to a mock provider")
     .option("-C, --cwd <dir>", "project root", process.cwd())
     .addHelpText(
       "after",
@@ -31,7 +33,7 @@ export function registerClarify(program: Command): void {
       const cwd = path.resolve(opts.cwd);
 
       // Posting needs a ticket provider; drafting does not.
-      const providers = selectProviders({
+      const { providers, resolution } = selectProviders({
         cwd,
         ticket: Boolean(opts.postComment),
       });
@@ -43,6 +45,8 @@ export function registerClarify(program: Command): void {
         ticketId: ticket,
         options: { reason: "clarify CLI" },
         providers,
+        providerResolution: resolution,
+        ...(opts.strictProviders ? { strictProviders: true } : {}),
         approval: {
           ...(opts.yes ? { yes: true } : {}),
           ...(opts.postComment ? { post: true } : {}),

@@ -9,6 +9,7 @@ const OptionsSchema = z.object({
   post: z.boolean().optional(),
   yes: z.boolean().optional(),
   json: z.boolean().optional(),
+  strictProviders: z.boolean().optional(),
   cwd: z.string(),
 });
 
@@ -21,6 +22,7 @@ export function registerUpdateTicket(program: Command): void {
     .option("--post", "post the update to the ticket (requires approval + provider)")
     .option("-y, --yes", "grant explicit approval for gated side effects")
     .option("--json", "emit one machine-readable JSON step report on stdout (CI mode)")
+    .option("--strict-providers", "fail (exit 1) instead of falling back to a mock provider")
     .option("-C, --cwd <dir>", "project root", process.cwd())
     .addHelpText(
       "after",
@@ -31,7 +33,7 @@ export function registerUpdateTicket(program: Command): void {
       const cwd = path.resolve(opts.cwd);
 
       // Posting needs a ticket provider; drafting does not.
-      const providers = selectProviders({ cwd, ticket: Boolean(opts.post) });
+      const { providers, resolution } = selectProviders({ cwd, ticket: Boolean(opts.post) });
 
       const { exitCode } = await runTentacleCommand({
         id: "delivery",
@@ -40,6 +42,8 @@ export function registerUpdateTicket(program: Command): void {
         ticketId: ticket,
         options: { decisionNote: "update-ticket CLI" },
         providers,
+        providerResolution: resolution,
+        ...(opts.strictProviders ? { strictProviders: true } : {}),
         approval: {
           ...(opts.yes ? { yes: true } : {}),
           ...(opts.post ? { post: true } : {}),

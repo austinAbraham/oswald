@@ -95,6 +95,90 @@ describe("state: updateState", () => {
   });
 });
 
+describe("state: status.blocked_from", () => {
+  it("stays optional — legacy state without the field parses cleanly", () => {
+    const s = parseState({
+      version: 1,
+      project: { name: "x", root: "/tmp/x" },
+      status: { phase: "blocked" },
+      timestamps: { created_at: T0, updated_at: T0 },
+      artifacts: {},
+    });
+    expect(s.status.blocked_from).toBeUndefined();
+  });
+
+  it("round-trips a recorded blocked_from through write/read", async () => {
+    const root = await makeTmpDir();
+    const state = createInitialState({
+      projectName: "demo",
+      projectRoot: root,
+      clock: fixedClock(T0),
+    });
+    state.status.phase = "blocked";
+    state.status.blocked_from = "validating";
+    state.status.blockers = ["Builds cleanly — not verified"];
+    await writeState(state);
+
+    const loaded = await readState(root);
+    expect(loaded.status.phase).toBe("blocked");
+    expect(loaded.status.blocked_from).toBe("validating");
+  });
+
+  it("rejects a blocked_from value that is not a workflow state", () => {
+    expect(() =>
+      parseState({
+        version: 1,
+        project: { name: "x", root: "/tmp/x" },
+        status: { phase: "blocked", blocked_from: "not-a-phase" },
+        timestamps: { created_at: T0, updated_at: T0 },
+        artifacts: {},
+      }),
+    ).toThrow(StateError);
+  });
+});
+
+describe("state: status.blocked_mode", () => {
+  it("stays optional — legacy state without the field parses cleanly", () => {
+    const s = parseState({
+      version: 1,
+      project: { name: "x", root: "/tmp/x" },
+      status: { phase: "blocked" },
+      timestamps: { created_at: T0, updated_at: T0 },
+      artifacts: {},
+    });
+    expect(s.status.blocked_mode).toBeUndefined();
+  });
+
+  it("round-trips a recorded blocked_mode through write/read", async () => {
+    const root = await makeTmpDir();
+    const state = createInitialState({
+      projectName: "demo",
+      projectRoot: root,
+      clock: fixedClock(T0),
+    });
+    state.status.phase = "blocked";
+    state.status.blocked_from = "validating";
+    state.status.blocked_mode = "external";
+    state.status.blockers = ["dbt test reported failures"];
+    await writeState(state);
+
+    const loaded = await readState(root);
+    expect(loaded.status.blocked_mode).toBe("external");
+  });
+
+  it("rejects a blocked_mode value that is not a known fidelity", () => {
+    expect(() =>
+      parseState({
+        version: 1,
+        project: { name: "x", root: "/tmp/x" },
+        status: { phase: "blocked", blocked_mode: "remote" },
+        timestamps: { created_at: T0, updated_at: T0 },
+        artifacts: {},
+      }),
+    ).toThrow(StateError);
+  });
+});
+
 describe("state: errors", () => {
   it("readState throws when not initialized", async () => {
     const root = await makeTmpDir();

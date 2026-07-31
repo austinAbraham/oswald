@@ -56,7 +56,7 @@ src/tentacles/   the 8 pipeline tentacles (intake, clarification, context, eda,
                  design, planning, validation, delivery) + base.ts + registry.ts
 src/tools/       provider capability layer (providers/ mock + types) and mcp/
 src/runtimes/    host-runtime adapters (claude-code, codex, gemini-cli, generic)
-src/cli/         the 14 CLI commands
+src/cli/         the 15 CLI commands
 ```
 
 ## How to Add a Tentacle

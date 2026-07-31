@@ -10,7 +10,7 @@ import type {
 /**
  * Generic CLI adapter — the always-available fallback.
  *
- * It writes a command-prompt markdown file for each of the 15 Oswald commands
+ * It writes a command-prompt markdown file for each of the 16 Oswald commands
  * under `<artifactDir>/runtime/generic/commands/<command>.md`, plus an index
  * README. These describe what each command does and how to invoke the Oswald
  * CLI directly. No runtime-specific assumptions; works anywhere a shell does.
