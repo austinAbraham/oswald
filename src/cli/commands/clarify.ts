@@ -8,6 +8,7 @@ const OptionsSchema = z.object({
   draftComment: z.boolean().optional(),
   postComment: z.boolean().optional(),
   yes: z.boolean().optional(),
+  json: z.boolean().optional(),
   strictProviders: z.boolean().optional(),
   cwd: z.string(),
 });
@@ -20,6 +21,7 @@ export function registerClarify(program: Command): void {
     .option("--draft-comment", "render the clarification comment as a draft only")
     .option("--post-comment", "post the clarification comment (requires approval)")
     .option("-y, --yes", "grant explicit approval for gated side effects")
+    .option("--json", "emit one machine-readable JSON step report on stdout (CI mode)")
     .option("--strict-providers", "fail (exit 1) instead of falling back to a mock provider")
     .option("-C, --cwd <dir>", "project root", process.cwd())
     .addHelpText(
@@ -50,6 +52,7 @@ export function registerClarify(program: Command): void {
           ...(opts.postComment ? { post: true } : {}),
           ...(opts.draftComment ? { draft: true } : {}),
         },
+        json: Boolean(opts.json),
       });
       process.exitCode = exitCode;
     });

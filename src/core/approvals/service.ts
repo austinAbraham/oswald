@@ -170,6 +170,9 @@ export interface ApprovalServiceOptions {
 }
 
 export class ApprovalService {
+  /** Every decision taken through this instance, in call order (audit trail). */
+  private readonly decisionLog: ApprovalResult[] = [];
+
   private readonly audit: AuditSink | undefined;
   private readonly ticketId: string | undefined;
 
@@ -178,7 +181,25 @@ export class ApprovalService {
     this.ticketId = options.ticketId;
   }
 
+  /**
+   * Immutable snapshot of every approval decision taken so far. The CLI runner
+   * reads this after a tentacle run to report which gated actions were
+   * allowed/denied (e.g. in `--json` step reports).
+   */
+  decisions(): readonly ApprovalResult[] {
+    return [...this.decisionLog];
+  }
+
   requireApproval(
+    action: ApprovalAction,
+    options: RequireApprovalOptions,
+  ): ApprovalResult {
+    const result = this.decide(action, options);
+    this.decisionLog.push(result);
+    return result;
+  }
+
+  private decide(
     action: ApprovalAction,
     options: RequireApprovalOptions,
   ): ApprovalResult {

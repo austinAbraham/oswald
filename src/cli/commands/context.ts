@@ -9,6 +9,7 @@ const OptionsSchema = z.object({
   includeDocs: z.boolean().optional(),
   includePrs: z.boolean().optional(),
   includeTickets: z.boolean().optional(),
+  json: z.boolean().optional(),
   strictProviders: z.boolean().optional(),
   cwd: z.string(),
 });
@@ -22,6 +23,7 @@ export function registerContext(program: Command): void {
     .option("--include-docs", "include related documents (needs a doc provider)")
     .option("--include-prs", "include related PRs (needs a repo provider)")
     .option("--include-tickets", "include related tickets (needs a ticket provider)")
+    .option("--json", "emit one machine-readable JSON step report on stdout (CI mode)")
     .option("--strict-providers", "fail (exit 1) instead of falling back to a mock provider")
     .option("-C, --cwd <dir>", "project root", process.cwd())
     .addHelpText(
@@ -48,6 +50,7 @@ export function registerContext(program: Command): void {
         ticketId: ticket,
         options: { scanRoot: cwd },
         providers,
+        json: Boolean(opts.json),
         providerResolution: resolution,
         ...(opts.strictProviders ? { strictProviders: true } : {}),
       });

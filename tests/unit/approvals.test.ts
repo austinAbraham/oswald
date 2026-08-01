@@ -230,6 +230,39 @@ describe("ApprovalService: action aliases", () => {
   });
 });
 
+describe("ApprovalService: decision log", () => {
+  it("records every decision in call order", () => {
+    const svc = new ApprovalService();
+    svc.requireApproval("ticket_update", { policy });
+    svc.requireApproval("open_pull_request", { yes: true, policy });
+    svc.requireApproval("push", {
+      yes: true,
+      policy: { requireApprovalFor: [], prohibit: ["push"] },
+    });
+
+    const decisions = svc.decisions();
+    expect(decisions.map((d) => d.action)).toEqual([
+      "ticket_update",
+      "open_pull_request",
+      "push",
+    ]);
+    expect(decisions.map((d) => d.decision)).toEqual([
+      "denied",
+      "allowed",
+      "prohibited",
+    ]);
+  });
+
+  it("returns a snapshot, not a live view", () => {
+    const svc = new ApprovalService();
+    svc.requireApproval("commit", { policy });
+    const snapshot = svc.decisions();
+    svc.requireApproval("commit", { yes: true, policy });
+    expect(snapshot).toHaveLength(1);
+    expect(svc.decisions()).toHaveLength(2);
+  });
+});
+
 describe("ApprovalService: assertApproved", () => {
   const svc = new ApprovalService();
   it("throws ApprovalDeniedError when denied", () => {

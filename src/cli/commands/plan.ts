@@ -3,13 +3,17 @@ import { z } from "zod";
 import type { Command } from "commander";
 import { runTentacleCommand } from "./_run.js";
 
-const OptionsSchema = z.object({ cwd: z.string() });
+const OptionsSchema = z.object({
+  json: z.boolean().optional(),
+  cwd: z.string(),
+});
 
 export function registerPlan(program: Command): void {
   program
     .command("plan")
     .description("Plan layered dbt models + tests and emit an intended-changes manifest")
     .argument("<ticket>", "ticket id this plan targets")
+    .option("--json", "emit one machine-readable JSON step report on stdout (CI mode)")
     .option("-C, --cwd <dir>", "project root", process.cwd())
     .addHelpText(
       "after",
@@ -24,6 +28,7 @@ export function registerPlan(program: Command): void {
         command: "plan",
         cwd,
         ticketId: ticket,
+        json: Boolean(opts.json),
       });
       process.exitCode = exitCode;
     });

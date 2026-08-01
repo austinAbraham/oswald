@@ -8,6 +8,7 @@ const OptionsSchema = z.object({
   draft: z.boolean().optional(),
   post: z.boolean().optional(),
   yes: z.boolean().optional(),
+  json: z.boolean().optional(),
   strictProviders: z.boolean().optional(),
   cwd: z.string(),
 });
@@ -20,6 +21,7 @@ export function registerUpdateTicket(program: Command): void {
     .option("--draft", "produce the ticket update as a draft only (default)")
     .option("--post", "post the update to the ticket (requires approval + provider)")
     .option("-y, --yes", "grant explicit approval for gated side effects")
+    .option("--json", "emit one machine-readable JSON step report on stdout (CI mode)")
     .option("--strict-providers", "fail (exit 1) instead of falling back to a mock provider")
     .option("-C, --cwd <dir>", "project root", process.cwd())
     .addHelpText(
@@ -47,6 +49,7 @@ export function registerUpdateTicket(program: Command): void {
           ...(opts.post ? { post: true } : {}),
           ...(opts.draft ? { draft: true } : {}),
         },
+        json: Boolean(opts.json),
       });
       process.exitCode = exitCode;
     });
