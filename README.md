@@ -270,7 +270,11 @@ stays green offline. `oswald doctor` reports whether `snow` was detected.
 | `brief` | Assemble an exec-readable stakeholder brief (`brief.md`) from existing artifacts; `--stdout-only` to print without writing. |
 | `status` | Read-only run dashboard: phase, ticket, requirements, blockers, artifacts, tool health, next command (`--json`). |
 | `next` | Show (or `--run`) the recommended next command from state. |
+<<<<<<< HEAD
+| `resume <ticket>` | Recover from `blocked`: re-run the blocking check and, on a pass, restore the pre-blocked phase (`--dbt` for a real re-run; required when the block came from a real external run). |
+=======
 | `run <ticket>` | Execute the recommended next step; `--auto` loops until a terminal phase, a blocker, or an approval gate (consent is never auto-granted). |
+>>>>>>> origin/main
 
 Every command accepts `-C, --cwd <dir>` to set the project root.
 

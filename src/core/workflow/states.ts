@@ -42,7 +42,9 @@ const LINEAR_NEXT: Record<WorkflowState, WorkflowState | null> = {
 
 /**
  * CLI command recommended to move *out of* each state.
- * `null` for terminal states.
+ * `null` only for `shipped` (the one true dead-end); `blocked` recommends
+ * `resume`, the first-class recovery command (it re-runs the blocking check
+ * and, on a pass, leaves `blocked` via a legal transition).
  */
 const COMMAND_FOR_STATE: Record<WorkflowState, string | null> = {
   uninitialized: "init",
@@ -57,7 +59,7 @@ const COMMAND_FOR_STATE: Record<WorkflowState, string | null> = {
   ready_for_pr: "pr",
   ready_for_ticket_update: "update-ticket",
   shipped: null,
-  blocked: null,
+  blocked: "resume",
 };
 
 export function isWorkflowState(value: string): value is WorkflowState {
@@ -154,7 +156,7 @@ export function assertLegalTransition(
 
 /**
  * Recommend the CLI command a user should run next from a given state.
- * Returns a human-friendly sentinel for terminal states.
+ * Returns `null` only for `shipped`; a `blocked` workflow recommends `resume`.
  */
 export function recommendNextCommand(state: WorkflowState): string | null {
   return COMMAND_FOR_STATE[state];

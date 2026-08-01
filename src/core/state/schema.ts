@@ -5,6 +5,15 @@ import { WORKFLOW_STATES } from "../workflow/states.js";
 
 export const STATE_VERSION = 1;
 
+/**
+ * Fidelity of the run that parked the workflow in `blocked`:
+ *   - `external` — real external checks executed (dbt build/test, injected
+ *     validation commands), so only an external re-run can clear the block;
+ *   - `local`    — only the offline classifier ran.
+ */
+export const BLOCKED_MODES = ["external", "local"] as const;
+export type BlockedMode = (typeof BLOCKED_MODES)[number];
+
 export const ToolStatusSchema = z.object({
   status: z.string(), // e.g. "available" | "unavailable" | "unknown"
 });
@@ -22,6 +31,22 @@ export const StateTicketSchema = z.object({
 
 export const StateStatusSchema = z.object({
   phase: z.enum(WORKFLOW_STATES),
+  /**
+   * The phase the workflow was in when it entered `blocked` — the recovery
+   * target for `oswald resume`. Optional (not defaulted) so state files
+   * written before this field existed remain valid; absent whenever the
+   * workflow is not blocked.
+   */
+  blocked_from: z.enum(WORKFLOW_STATES).optional(),
+  /**
+   * Fidelity of the run that produced the current block (`external` when real
+   * external checks ran; `local` when only the offline classifier did).
+   * `oswald resume` refuses to clear an `external` block with a local-only
+   * re-run — the failed checks would simply be skipped, not re-evaluated.
+   * Optional so state files written before this field existed remain valid;
+   * absent whenever the workflow is not blocked.
+   */
+  blocked_mode: z.enum(BLOCKED_MODES).optional(),
   last_command: z.string().nullable().default(null),
   next_recommended_command: z.string().nullable().default(null),
   blockers: z.array(z.string()).default([]),

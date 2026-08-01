@@ -82,8 +82,13 @@ uninitialized → intake → clarification → context → eda → design → pl
 Each state maps to the CLI command that advances *out* of it
 (`recommendNextCommand`) and to its default successor (`nextState`).
 `canTransition` allows the linear successor, any non-terminal → `blocked`, and
-`blocked` → any non-terminal (resume after unblocking). `shipped` and `blocked`
-are terminal for `next`.
+`blocked` → any non-terminal (resume after unblocking). `shipped` is terminal
+for `next`; a `blocked` workflow recommends `oswald resume`, which re-runs the
+blocking check and — on a pass — restores the phase recorded in
+`status.blocked_from` when it is legally reachable. State also records the
+blocking run's fidelity (`status.blocked_mode`: `external` | `local`); a block
+produced by a real external run (dbt build/test, validation commands) is never
+cleared by a local-only re-run — `resume` refuses and requires `--dbt`.
 
 ### Policy engine (`core/policy`)
 

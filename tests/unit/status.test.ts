@@ -169,7 +169,8 @@ describe("buildStatusReport: initialized project", () => {
     const report = await buildStatusReport({ cwd: dir });
     expect(report.phase).toBe("blocked");
     expect(report.blockers).toEqual(["validation gate failed: row counts diverge"]);
-    expect(report.nextCommand).toBeNull();
+    // blocked is no longer a dead end: the workflow recommends `resume`.
+    expect(report.nextCommand).toBe("resume");
     expect(report.thenCommand).toBeNull();
   });
 

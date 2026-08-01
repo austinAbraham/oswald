@@ -43,12 +43,14 @@ a uniform contract:
 | `1`  | hard error — the command threw, an unknown tentacle, or a precondition failed (e.g. `--strict-providers` refused a provider fallback) |
 | `2`  | **blocked** — the workflow landed in `blocked` (e.g. a validation gate failed). Not a crash; artifacts are still written, but the non-zero code halts automation. |
 
-Operator commands (`doctor`, `status`, `ship`, `compact`, `audit`, `brief`,
-`next`, `init`) use `0`/`1` (`doctor` returns `1` on any fail-status check;
-`ship`/`compact`/`brief` return `1` on a precondition failure; `audit verify`
-returns `1` on a broken hash chain; `status` is read-only and returns `0` even
-when the project is uninitialized). `run` extends the contract with one extra
-code: `3` = parked at an approval gate (see [`oswald run`](#oswald-run-ticket)).
+[`resume`](#oswald-resume-ticket) follows the same contract (`2` = the blocking
+check still fails). Operator commands (`doctor`, `status`, `ship`, `compact`,
+`audit`, `brief`, `next`, `init`) use `0`/`1` (`doctor` returns `1` on any
+fail-status check; `ship`/`compact`/`brief` return `1` on a precondition
+failure; `audit verify` returns `1` on a broken hash chain; `status` is
+read-only and returns `0` even when the project is uninitialized). `run`
+extends the contract with one extra code: `3` = parked at an approval gate
+(see [`oswald run`](#oswald-run-ticket)).
 
 ---
 
@@ -123,7 +125,8 @@ default `.oswald` dir (run `oswald doctor` to surface config problems).
 
 ### `oswald next`
 Show (or run) the recommended next command, derived from the workflow state
-machine.
+machine. A `blocked` workflow is not a dead end: `next` lists the recorded
+blockers and recommends [`oswald resume`](#oswald-resume-ticket).
 
 | Option | Description |
 |--------|-------------|
@@ -186,9 +189,11 @@ fabricate — run `oswald intake <ticket> --from-file <path>` first), and when
 These advance the linear state machine
 `intake → clarification → context → eda → design → planning → building →
 validating → ready_for_pr → ready_for_ticket_update → shipped` (`blocked` is a
-recoverable side state). Each prints a standard block: what it did, the
-provider resolution table, warnings, open questions, artifacts written, and the
-suggested next command. All return `0` / `1` / `2` per the table above.
+recoverable side state — recover with
+[`oswald resume`](#oswald-resume-ticket)). Each prints a standard block: what
+it did, the provider resolution table, warnings, open questions, artifacts
+written, and the suggested next command. All return `0` / `1` / `2` per the
+table above.
 
 Transitions are **enforced**: a command run out of order (one whose completed
 phase the state machine cannot reach from the current phase, e.g. `plan`
@@ -314,7 +319,10 @@ running dbt is opt-in and guarded.
 | `--skip-external` | stay fully local: never run any external command (default) |
 | `-C, --cwd <dir>` | project root |
 
-**Writes:** `validation.md`. A failed gate moves state to `blocked` → **exit 2**.
+**Writes:** `validation.md`. A failed gate moves state to `blocked` (recording
+the origin phase in `status.blocked_from` and the run's fidelity in
+`status.blocked_mode`: `external` when real external checks ran, `local`
+otherwise) → **exit 2**. Recover with [`oswald resume`](#oswald-resume-ticket).
 
 ### `oswald pr <ticket>`
 Package the change into a PR summary. Opening the PR is gated.
@@ -379,6 +387,37 @@ the context-rot-resistance maintenance step.
 
 **Writes:** a compacted context summary; archives intermediates. **Exit:** `0` /
 `1`.
+
+### `oswald resume <ticket>`
+Recover from a `blocked` workflow. Reports the recorded blockers, re-runs the
+blocking check (the validation gate), and — on a pass — leaves `blocked` via a
+legal transition, restoring the phase recorded in `status.blocked_from` when it
+is legally reachable. Single-shot and deterministic: no retry loops, no
+auto-fixing. Running it on a non-blocked workflow is a no-op that just reports
+the recommended next command.
+
+**Fidelity guard:** a block is never cleared at a lower fidelity than the run
+that produced it. When `status.blocked_mode` is `external` (the blocking run
+executed real dbt build/test or validation commands), a local-only `resume`
+refuses to re-run anything and stays `blocked` (**exit 2**) — re-run with
+`--dbt` (or another external knob) to clear it. The blocked hints printed by
+the pipeline commands and `oswald next` include `--dbt` in that case.
+
+| Option | Description |
+|--------|-------------|
+| `--command <cmd>` | extra validation command to run (repeatable) |
+| `--dbt` | re-run with real dbt build + test when a dbt project is detected (turns on external execution) |
+| `--skip-external` | stay fully local: never run any external command (default) |
+| `--dbt-project-dir <dir>` | explicit dbt project dir (else auto-detected) |
+| `--dbt-command <cmd>` | dbt invocation (e.g. `uvx --from dbt-core --with dbt-duckdb dbt`) |
+| `--dbt-target <target>` | dbt target to build/test against (must look like a sandbox) |
+| `-C, --cwd <dir>` | project root |
+
+**Writes:** the validation artifacts (the re-run goes through the validate
+tentacle) and updates `state.yml`. **Exit:** `0` unblocked (or nothing to
+resume); `1` hard error; `2` the workflow stays `blocked` — either the blocking
+check still fails, or an `external` block was attempted with a local-only
+re-run (refused; nothing re-run).
 
 ### `oswald audit`
 Inspect the persistent, tamper-evident audit ledger (`.oswald/audit.jsonl`).

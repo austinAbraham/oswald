@@ -24,6 +24,7 @@ import {
   createInitialState,
   writeState,
   DEFAULT_ARTIFACT_DIR,
+  type BlockedMode,
   type OswaldState,
 } from "../core/state/index.js";
 import {
@@ -363,6 +364,15 @@ export interface AdvanceWorkflowPatch {
   requirements?: Partial<OswaldState["requirements"]>;
   /** Blockers to set (e.g. unresolved open questions that gate progress). */
   blockers?: string[];
+  /**
+   * Fidelity of the run producing a `blocked` transition: `external` when real
+   * external checks executed (dbt build/test, injected validation commands),
+   * `local` when only offline classification ran. Only meaningful with
+   * `phase: "blocked"`; omit when the blocking run's fidelity is unknown
+   * (e.g. delivery re-reading a validation signal) — the recorded mode is then
+   * left untouched.
+   */
+  blockedMode?: BlockedMode;
 }
 
 export async function advanceWorkflow(
@@ -392,15 +402,38 @@ export async function advanceWorkflow(
   const stamp = ctx.clock.nowIso();
   const phaseRuns = { ...current.phase_runs, [patch.lastCommand]: stamp };
 
+  const status: OswaldState["status"] = {
+    ...current.status,
+    phase: patch.phase,
+    last_command: patch.lastCommand,
+    next_recommended_command: recommendNextCommand(patch.phase),
+    blockers: patch.blockers ?? current.status.blockers,
+  };
+  // Record where the workflow was when it entered `blocked` — and at what
+  // fidelity the blocking run executed — so `oswald resume` can recover it
+  // (and refuse to clear a REAL external block with a local-only re-run).
+  // Re-blocking while already blocked preserves the original origin and never
+  // DOWNGRADES an `external` mode to `local` (an external failure can only be
+  // cleared by an external re-run); leaving `blocked` clears both markers.
+  if (patch.phase === "blocked") {
+    const freshlyBlocked = current.status.phase !== "blocked";
+    if (freshlyBlocked) {
+      status.blocked_from = current.status.phase;
+    }
+    if (
+      patch.blockedMode &&
+      (freshlyBlocked || current.status.blocked_mode !== "external")
+    ) {
+      status.blocked_mode = patch.blockedMode;
+    }
+  } else {
+    delete status.blocked_from;
+    delete status.blocked_mode;
+  }
+
   const next: OswaldState = {
     ...current,
-    status: {
-      ...current.status,
-      phase: patch.phase,
-      last_command: patch.lastCommand,
-      next_recommended_command: recommendNextCommand(patch.phase),
-      blockers: patch.blockers ?? current.status.blockers,
-    },
+    status,
     requirements: {
       ...current.requirements,
       ...(patch.requirements ?? {}),
