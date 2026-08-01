@@ -443,7 +443,12 @@ describe("approvals: gated/prohibited introspection helpers", () => {
   });
 
   it("matches config aliases for prohibition", () => {
-    expect(isActionProhibited("push", policy)).toBe(true);
+    // push and direct_push_to_protected_branch are separate action classes:
+    // only the latter matches the shipped default prohibit entry.
+    expect(isActionProhibited("direct_push_to_protected_branch", policy)).toBe(
+      true,
+    );
+    expect(isActionProhibited("push", policy)).toBe(false);
     expect(isActionProhibited("open_pull_request", policy)).toBe(false);
   });
 });

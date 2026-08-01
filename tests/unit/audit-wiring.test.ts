@@ -79,7 +79,10 @@ describe("audit wiring: ApprovalService", () => {
 
     svc.requireApproval("ticket_update", { yes: true, policy, reason: "post update" });
     svc.requireApproval("commit", { policy });
-    svc.requireApproval("push", { yes: true, policy });
+    svc.requireApproval("direct_push_to_protected_branch", {
+      yes: true,
+      policy,
+    });
 
     expect(events.map((e) => e.event)).toEqual([
       "approval_decision",
@@ -105,7 +108,7 @@ describe("audit wiring: ApprovalService", () => {
       policy_gate: "ungated",
     });
     expect(prohibited).toMatchObject({
-      action: "push",
+      action: "direct_push_to_protected_branch",
       decision: "prohibited",
       allowed: false,
       consent: "explicit_flag",

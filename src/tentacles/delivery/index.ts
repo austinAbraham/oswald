@@ -11,11 +11,15 @@
  *   - APPENDS to a running decision_log.md,
  * and then advances `.oswald/state.yml`.
  *
- * Side-effecting actions — create branch / open PR / update ticket / create
- * follow-up tickets — are DRAFT BY DEFAULT. They only execute when the caller
- * passes explicit consent (`yes: true`) AND the policy permits, routed through
- * the ApprovalService (default-deny). Absent consent, this tentacle produces
- * only artifacts and records the gated actions as "not taken".
+ * Side-effecting actions — create branch / commit the changed files / open PR /
+ * update ticket / create follow-up tickets — are DRAFT BY DEFAULT. They only
+ * execute when the caller passes explicit consent (`yes: true`) AND the policy
+ * permits, routed through the ApprovalService (default-deny). Absent consent,
+ * this tentacle produces only artifacts and records the gated actions as "not
+ * taken". When delivery creates the branch itself, the changed files are
+ * committed onto it (gated under `commit`) BEFORE the PR opens, so the PR
+ * actually contains the work it summarizes; a freshly created branch with no
+ * commit is never pushed.
  *
  * Inputs it reads (best-effort; degrades when missing): validation.md, plan.md,
  * requirements.md, and the repo provider's changed files. ALL artifact bodies +
@@ -177,6 +181,7 @@ export const deliveryTentacle: Tentacle<
     "repo.changedFiles",
     "repo.currentBranch",
     "repo.createBranch",
+    "repo.commit",
     "repo.openPullRequest",
     "ticket.draftComment",
     "ticket.postComment",
@@ -342,14 +347,45 @@ export const deliveryTentacle: Tentacle<
     }
     recordGate("create_branch", branchDecision, branchTaken);
 
-    // open_pull_request
+    // commit — put the changed files ON the branch delivery just created, so
+    // the PR below actually contains the work it summarizes.
+    const commitDecision = ctx.approvals.requireApproval("commit", {
+      yes: input.yes,
+      policy,
+      reason: `delivery: commit ${changedPaths.length} changed file(s) on ${branch}`,
+    });
+    let commitTaken = false;
+    if (commitDecision.allowed && ctx.providers.repo && branchTaken) {
+      if (changedPaths.length === 0) {
+        warnings.push("commit skipped: no changed files to put on the branch.");
+      } else {
+        const res = await ctx.providers.repo.commit(prTitle, changedPaths, {
+          yes: true,
+          reason: "delivery",
+        });
+        commitTaken = res.ok;
+        if (!res.ok) warnings.push(`commit refused: ${res.error}`);
+      }
+    }
+    recordGate("commit", commitDecision, commitTaken);
+
+    // open_pull_request. A branch delivery just created only has commits ahead
+    // of the base when the gated commit above landed — pushing it otherwise
+    // would open an empty PR (or fail at the forge), so refuse with guidance
+    // instead. A pre-existing branch (createBranch not taken because the user
+    // already committed their work) is pushed as-is.
     const prDecision = ctx.approvals.requireApproval("open_pull_request", {
       yes: input.yes,
       policy,
       reason: `delivery: open PR ${prTitle}`,
     });
     let prTaken = false;
-    if (prDecision.allowed && ctx.providers.repo) {
+    const freshBranchWithoutCommit = branchTaken && !commitTaken;
+    if (prDecision.allowed && ctx.providers.repo && freshBranchWithoutCommit) {
+      warnings.push(
+        `openPullRequest skipped: branch '${branch}' was just created and has no commits ahead of '${base}' — there is nothing to open a PR for. Allow the 'commit' action (or commit the changes yourself) and re-run.`,
+      );
+    } else if (prDecision.allowed && ctx.providers.repo) {
       const res = await ctx.providers.repo.openPullRequest(
         { title: prTitle, branch, base },
         { yes: true, reason: "delivery" },

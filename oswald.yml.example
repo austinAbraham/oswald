@@ -50,6 +50,23 @@ warehouse:
   # CLI dialect. Only "snow" is implemented; "snowsql" is reserved.
   dialect: snow
 
+# How Oswald talks to the local git repo + its forge for `pr --open` (the real,
+# non-MCP repo path). All optional: with no `repo:` block (or provider: mock) the
+# deterministic mock repo provider is used, so PR opening stays draft-only and
+# tests/demos stay hermetic. NOTE: no secrets here — forge auth lives in the
+# forge CLI's own config (`gh auth login`, `glab auth login`, `az login`).
+repo:
+  # mock (default, hermetic) | git (real branch/commit/PR via the git CLI).
+  provider: mock
+  # The git invocation, whitespace-split into argv (never run through a shell).
+  command: git
+  # Forge CLI override; by default it is derived from the remote URL:
+  # gh (github.com), glab (gitlab), az (dev.azure.com / visualstudio.com).
+  # forge_command: gh
+  # The git remote pull requests target.
+  remote: origin
+  timeout_ms: 60000
+
 # MCP servers Oswald may use. Keys are logical names; values describe how to reach them.
 mcp_servers:
   dbt:
