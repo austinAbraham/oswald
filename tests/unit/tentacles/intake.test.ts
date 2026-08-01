@@ -85,7 +85,8 @@ describe("intake tentacle: well-specified ticket", () => {
 
     const result = await intakeTentacle.run(ctx);
 
-    expect(result.artifactsWritten).toHaveLength(3);
+    // intake.md, requirements.md, acceptance_criteria.md + readiness.md.
+    expect(result.artifactsWritten).toHaveLength(4);
 
     const brief = await ctx.artifacts.read("intake.md");
     const requirements = await ctx.artifacts.read("requirements.md");

@@ -229,7 +229,12 @@ ticket id (when a provider is given) or inline ticket text.
 
 Examples: `oswald intake --from-file ./ticket.md`,
 `oswald intake TICKET-42 --provider mock`.
-**Writes:** `intake.md` (+ seeds `state.yml` if missing).
+**Writes:** `intake.md` and `readiness.md` (+ seeds `state.yml` if missing).
+`readiness.md` is the dimension-by-dimension readiness scorecard (grain,
+sources, acceptance criteria, targets, stakeholders, metric definitions, due
+date); the score is recorded in `state.requirements.readiness`. Re-running
+intake re-scores and reports the readiness delta. The scorecard is
+informational unless `policies.readiness.min_score` is set (see `clarify`).
 
 ### `oswald clarify <ticket>`
 Triage open questions and draft a clarification comment. Posting is gated.
@@ -238,12 +243,24 @@ Triage open questions and draft a clarification comment. Posting is gated.
 |--------|-------------|
 | `--draft-comment` | render the clarification comment as a draft only |
 | `--post-comment` | post the clarification comment (requires approval) |
+| `--override-readiness <reason>` | proceed past a failing readiness gate; the reason is recorded in state and appended to `decision_log.md` |
 | `-y, --yes` | grant explicit approval for gated side effects |
 | `--json` | emit one machine-readable JSON step report on stdout |
 | `--strict-providers` | fail (exit 1) instead of falling back to a mock provider |
 | `-C, --cwd <dir>` | project root |
 
 **Writes:** `clarifications.md`. Posting (`ticket_update`) is approval-gated.
+
+**Readiness gate:** when `policies.readiness.min_score` is configured (default:
+unset = no gating) and the readiness score intake recorded is below it, the
+workflow lands in `blocked` → **exit 2**, and a structured
+`missing_information_request.md` is auto-drafted, keyed to the failed readiness
+dimensions (e.g. "Grain not declared: one row per what?") and routed to the
+identified stakeholders. It is a **draft by default** — posting it rides the
+same approval-gated `ticket_update` action class as the clarification comment.
+Recover by answering the missing information and re-running `intake` (which
+re-scores and clears any override), or record a human override with
+`--override-readiness "<reason>"`.
 
 ### `oswald context <ticket>`
 Gather existing warehouse/repo/doc context so work is not duplicated.
@@ -590,7 +607,9 @@ Canonical filenames written under the artifact dir (default `.oswald/`):
 |-------|------|
 | state | `state.yml` |
 | intake | `intake.md` |
+| intake (readiness scorecard) | `readiness.md` |
 | clarify | `clarifications.md` |
+| clarify (readiness gate) | `missing_information_request.md` |
 | context | `context.md` |
 | eda | `eda.md` |
 | design | `design.md` |

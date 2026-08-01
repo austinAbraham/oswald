@@ -36,8 +36,13 @@ export interface ConsumptionEdge {
  * is the PRODUCING phase's to regenerate, not its consumers'.
  */
 export const PHASE_OUTPUTS: Readonly<Record<string, readonly string[]>> = {
-  intake: ["intake.md", "requirements.md", "acceptance_criteria.md"],
-  clarify: ["open_questions.md", "scope_risks.md", "clarification_comment.md"],
+  intake: ["intake.md", "requirements.md", "acceptance_criteria.md", "readiness.md"],
+  clarify: [
+    "open_questions.md",
+    "scope_risks.md",
+    "clarification_comment.md",
+    "missing_information_request.md",
+  ],
   context: [
     "context_pack.md",
     "existing_assets.md",

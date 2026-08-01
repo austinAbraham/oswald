@@ -118,6 +118,20 @@ export const PrivacyPolicySchema = z
   .default({});
 
 /**
+ * The ticket readiness gate. `min_score` is the minimum readiness score
+ * (0..1, from intake's dimension-by-dimension scorecard) required at the
+ * clarification step. The default `null` DISABLES gating entirely — the
+ * scorecard stays informational and current behavior is unchanged. When set,
+ * a below-threshold ticket lands the workflow in `blocked` (exit 2) unless a
+ * human override is recorded (`clarify --override-readiness "<reason>"`).
+ */
+export const ReadinessPolicySchema = z
+  .object({
+    min_score: z.number().min(0).max(1).nullable().default(null),
+  })
+  .default({});
+
+/**
  * How much consent the policy itself may grant (the autonomy tier).
  *
  * - `draft_only` (default): classic behavior — every side effect needs an
@@ -170,6 +184,7 @@ export const PoliciesConfigSchema = z
     strict_providers: z.boolean().default(false),
     warehouse: WarehousePolicySchema,
     privacy: PrivacyPolicySchema,
+    readiness: ReadinessPolicySchema,
   })
   .default({});
 
@@ -191,5 +206,6 @@ export type StandardsConfig = z.infer<typeof StandardsConfigSchema>;
 export type DbtConfig = z.infer<typeof DbtConfigSchema>;
 export type WarehouseConfig = z.infer<typeof WarehouseConfigSchema>;
 export type McpServerConfig = z.infer<typeof McpServerSchema>;
+export type ReadinessPolicy = z.infer<typeof ReadinessPolicySchema>;
 export type PoliciesConfig = z.infer<typeof PoliciesConfigSchema>;
 export type OswaldConfig = z.infer<typeof OswaldConfigSchema>;
